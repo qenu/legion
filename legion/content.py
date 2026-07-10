@@ -80,6 +80,8 @@ PATCH: dict = {
         {"key": "rock_throw", "name": "投擲碎石", "effect_type": "damage", "effect_value": "{atk} + 10", "cooldown": 2},
         {"key": "flame_throw", "name": "火焰噴射", "effect_type": "damage", "effect_value": "{atk} + 20", "cooldown": 4},
         {"key": "poison_fang", "name": "毒牙", "effect_type": "poison", "effect_value": "{atk}*20%", "cooldown": 3},
+        {"key": "focus_shot", "name": "專注射擊", "effect_type": "damage", "effect_value": "{atk} + 15", "cooldown": 2},
+        {"key": "flame_arrow", "name": "火焰箭", "effect_type": "burn", "effect_value": "{atk}*20%", "cooldown": 4},
     ],
     "passive_skills": [
         {"key": "grit", "name": "堅毅", "stat_bonus_type": "hp", "stat_bonus_value": 20},
@@ -168,6 +170,14 @@ PATCH: dict = {
             "actives": [{"skill": "piercing_shot", "tier": 1, "req": 2}],
             "passives": [{"skill": "fleetfoot", "tier": 1, "req": 3}],
             "main_weapon": False,
+        },
+        {
+            "key": "flame_lizard_bow", "name": "火蜥弓", "category": "bow",
+            "actives": [{"skill": "focus_shot", "tier": 2, "req": 2},
+                       {"skill": "flame_arrow", "tier": 2, "req": 3}],
+            "passives": [{"skill": "fleetfoot", "tier": 2, "req": 2},
+                        {"skill": "focus", "tier": 2, "req": 3},
+                        {"skill": "haste", "tier": 1, "req": 4}],
         },
     ],
     "mobs": [
@@ -413,6 +423,12 @@ PATCH: dict = {
          "inputs": [{"material": "rabbit_foot", "qty": 1},
                     {"material": "sunherb", "qty": 2},
                     {"material": "cobweb", "qty": 1}]},
+        {"key": "forge_flame_lizard_bow", "name": "火蜥弓",
+         "weapon": "flame_lizard_bow",
+         "inputs": [{"material": "flame_lizard_core", "qty": 2},
+                    {"material": "spider_fang", "qty": 4},
+                    {"material": "lizard_tail", "qty": 4},
+                    {"material": "cobweb", "qty": 2}]},
     ],
     "upgrade_costs": [
         {"level": 2, "material": "slime_goo", "base_qty": 5},

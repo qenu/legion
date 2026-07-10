@@ -25,6 +25,12 @@ from maki.cogs.legion.constants import (
     BLEED_DURATION,
     ContentStatus,
     DEATH_HP,
+    POISON_DURATION,
+    POISON_PCT_MAX_HP,
+    BURN_DURATION,
+    BURN_DOUBLE_CHANCE,
+    FREEZE_DURATION,
+    FREEZE_SKIP_CHANCE,
     HP_AGGRO_WEIGHT,
     PLAYER_BASE_ATK,
     PLAYER_BASE_DEF,
@@ -68,10 +74,13 @@ class LoadedSkill:
 
 
 @dataclass
-class Bleed:
+class DoT:
     dmg_per_round: int
     rounds_left: int
     source: "Combatant"  # gets damage_dealt credit for each round's tick
+    label: str = "bleed"  # DoT flavor -> event kinds: "{label}_tick" / "{label}_effect"
+    pct_max_hp: float = 0.0     # poison: bonus = pct * victim.max_hp per round
+    double_chance: float = 0.0  # burn: chance the round's damage is doubled
 
 
 @dataclass
@@ -90,7 +99,8 @@ class Combatant:
 
     gauge: int = 0
     stun_rounds: int = 0  # missed turn-opportunities left (rounds, not ticks)
-    bleeds: list[Bleed] = field(default_factory=list)
+    freeze_rounds: int = 0  # turns still under freeze (each has a chance to skip)
+    dots: list[DoT] = field(default_factory=list)
 
     damage_dealt: int = 0
     damage_taken: int = 0
@@ -446,10 +456,46 @@ def _use_skill(
             )
         )
     elif skill.effect_type == EffectType.BLEED:
-        enemy.bleeds.append(Bleed(value, BLEED_DURATION, actor))
+        enemy.dots.append(DoT(value, BLEED_DURATION, actor))
         events.append(
             CombatEvent(
                 tick=ctx.tick, round=ctx.round + 1, actor=actor.name, kind="bleed",
+                target=enemy.name, value=value, detail=skill.name,
+            )
+        )
+    elif skill.effect_type == EffectType.POISON:
+        # Poison: base DoT + an extra 1% of the victim's max HP each round.
+        enemy.dots.append(
+            DoT(value, POISON_DURATION, actor, label="poison",
+                  pct_max_hp=POISON_PCT_MAX_HP)
+        )
+        events.append(
+            CombatEvent(
+                tick=ctx.tick, round=ctx.round + 1, actor=actor.name, kind="poison",
+                target=enemy.name, value=value, detail=skill.name,
+            )
+        )
+    elif skill.effect_type == EffectType.BURN:
+        # Burn: base DoT that has a 30% chance each round to deal double.
+        enemy.dots.append(
+            DoT(value, BURN_DURATION, actor, label="burn",
+                  double_chance=BURN_DOUBLE_CHANCE)
+        )
+        events.append(
+            CombatEvent(
+                tick=ctx.tick, round=ctx.round + 1, actor=actor.name, kind="burn",
+                target=enemy.name, value=value, detail=skill.name,
+            )
+        )
+    elif skill.effect_type == EffectType.FREEZE:
+        # Freeze: base DoT (like the others) that ALSO lingers as a status --
+        # each of the victim's next turns has a chance to be skipped (resolved
+        # in the turn loop as the freeze_effect).
+        enemy.dots.append(DoT(value, FREEZE_DURATION, actor, label="freeze"))
+        enemy.freeze_rounds = max(enemy.freeze_rounds, FREEZE_DURATION)
+        events.append(
+            CombatEvent(
+                tick=ctx.tick, round=ctx.round + 1, actor=actor.name, kind="freeze",
                 target=enemy.name, value=value, detail=skill.name,
             )
         )
@@ -519,29 +565,54 @@ def _mob_act(
             p.stun_rounds -= 1
 
 
-def _apply_bleeds(
-    combatant: Combatant, ctx: BattleContext, events: list[CombatEvent]
+def _dot_hurt(
+    combatant: Combatant, source: Combatant, dmg: int, kind: str,
+    ctx: BattleContext, events: list[CombatEvent],
 ) -> None:
-    for bleed in combatant.bleeds:
+    """Apply one chunk of DoT damage, credit the source, and log it."""
+    if dmg <= 0:
+        return
+    combatant.current_hp = max(0, combatant.current_hp - dmg)
+    combatant.damage_taken += dmg
+    source.damage_dealt += dmg
+    events.append(
+        CombatEvent(
+            tick=ctx.tick, round=ctx.round + 1, actor=combatant.name,
+            kind=kind, value=dmg,
+        )
+    )
+
+
+def _apply_dots(
+    combatant: Combatant, ctx: BattleContext, events: list[CombatEvent],
+    rng: random.Random,
+) -> None:
+    for dot in combatant.dots:
         if not combatant.alive:
             break
-        dmg = bleed.dmg_per_round
-        combatant.current_hp = max(0, combatant.current_hp - dmg)
-        combatant.damage_taken += dmg
-        bleed.source.damage_dealt += dmg
-        bleed.rounds_left -= 1
-        events.append(
-            CombatEvent(
-                tick=ctx.tick, round=ctx.round + 1, actor=combatant.name, kind="bleed_tick", value=dmg
-            )
+        # Base tick (from effect_value), then the status's special bonus.
+        _dot_hurt(
+            combatant, dot.source, dot.dmg_per_round,
+            f"{dot.label}_tick", ctx, events,
         )
+        if combatant.alive:
+            bonus = 0
+            if dot.pct_max_hp:                       # poison: +% max HP
+                bonus = max(1, int(combatant.max_hp * dot.pct_max_hp))
+            elif dot.double_chance and rng.random() < dot.double_chance:
+                bonus = dot.dmg_per_round            # burn: doubled -> +base
+            _dot_hurt(
+                combatant, dot.source, bonus,
+                f"{dot.label}_effect", ctx, events,
+            )
+        dot.rounds_left -= 1
         if not combatant.alive:
             events.append(
                 CombatEvent(tick=ctx.tick, round=ctx.round + 1, actor=combatant.name, kind="death")
             )
             if isinstance(combatant, PlayerState):
                 ctx.dead_player_count += 1
-    combatant.bleeds = [b for b in combatant.bleeds if b.rounds_left > 0]
+    combatant.dots = [b for b in combatant.dots if b.rounds_left > 0]
 
 
 def run_simulation(
@@ -607,16 +678,38 @@ def run_simulation(
                         )
                     )
                     continue
-                # Round boundary: bleeds tick ONCE per round, just before the
+                # Freeze: like stun but probabilistic -- a lingering status
+                # where each turn has a chance to be lost (round stays open).
+                if actor.freeze_rounds > 0:
+                    actor.freeze_rounds -= 1
+                    if rng.random() < FREEZE_SKIP_CHANCE:
+                        events.append(
+                            CombatEvent(
+                                tick=ctx.tick, round=ctx.round + 1,
+                                actor=actor.name, kind="freeze_effect",
+                            )
+                        )
+                        continue
+                # Round boundary: dots tick ONCE per round, just before the
                 # mob acts -- a bleeding combatant can die of wounds here,
                 # including the mob itself, before it gets its turn.
                 for combatant in (*party, mob):
-                    if combatant.alive and combatant.bleeds:
-                        _apply_bleeds(combatant, ctx, events)
+                    if combatant.alive and combatant.dots:
+                        _apply_dots(combatant, ctx, events, rng)
                 if over() or not actor.alive:
                     continue
                 _mob_act(actor, party, ctx, events, rng)
             else:
+                if actor.freeze_rounds > 0:
+                    actor.freeze_rounds -= 1
+                    if rng.random() < FREEZE_SKIP_CHANCE:
+                        events.append(
+                            CombatEvent(
+                                tick=ctx.tick, round=ctx.round + 1,
+                                actor=actor.name, kind="freeze_effect",
+                            )
+                        )
+                        continue
                 _player_act(actor, mob, party, ctx, events)  # type: ignore[arg-type]
             _check_requirements(mob, ctx, events)
 

@@ -164,10 +164,13 @@ COMBAT_EVENT = {
     "bleed_tick": "**{actor}** 受到了 **{value:,}** 點流血傷害",
     "poison":     "**{actor}** 對 **{target}** 使用 __{detail}__ 造成中毒",
     "poison_tick":"**{actor}** 受到了 **{value:,}** 點中毒傷害",
+    "poison_effect":"**{actor}** 毒性擴散，額外承受了 **{value:,}** 點傷害",
     "burn":       "**{actor}** 對 **{target}** 使用 __{detail}__ 造成燃燒",
     "burn_tick":  "**{actor}** 受到了 **{value:,}** 點燃燒傷害",
+    "burn_effect":"**{actor}** 遭到灼傷，額外承受了 **{value:,}** 點傷害",
     "freeze":     "**{actor}** 對 **{target}** 使用 __{detail}__ 造成了冰凍",
     "freeze_tick":"**{actor}** 受到了 **{value:,}** 點冰凍傷害",
+    "freeze_effect":"**{actor}** 遭到冰凍，無法行動！",
     "death":      "**{actor}** 倒下了!",
     "passive":    "**{actor}** 的 __{detail}__ 發動了！",
 }

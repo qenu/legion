@@ -62,6 +62,14 @@ LEGION_EXP_BASE = 100  # level n costs n * LEGION_EXP_BASE exp
 ATB_THRESHOLD   = 100   # gauge needed to act; gauge += speed per tick
 SIM_MAX_TICKS   = 600   # hard stop: unresolved fight counts as a loss
 BLEED_DURATION  = 3     # bleed deals effect_value once per ROUND, this many rounds
+# Status DoTs: each also deals its base effect_value per round (the "_tick"),
+# plus a special "_effect" bonus on top.
+POISON_DURATION    = 3
+POISON_PCT_MAX_HP  = 0.01   # poison: +1% of the victim's max HP each round
+BURN_DURATION      = 3
+BURN_DOUBLE_CHANCE = 0.30   # burn: 30% chance each round to deal DOUBLE (base again)
+FREEZE_DURATION    = 3      # freeze lingers this many of the victim's turns
+FREEZE_SKIP_CHANCE = 0.30   # freeze: 30% chance to skip each of those turns
 PLAYER_BASE_ATK   = 10
 PLAYER_BASE_DEF   = 5
 PLAYER_BASE_SPEED = 10
@@ -175,6 +183,9 @@ class EffectType(StrEnum):
     HEAL   = "heal"
     STUN   = "stun"
     BLEED  = "bleed"
+    POISON = "poison"
+    BURN   = "burn"
+    FREEZE = "freeze"
 
 class StatBonusType(StrEnum):
     ATK   = "atk"
