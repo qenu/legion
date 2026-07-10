@@ -1,0 +1,12 @@
+# python related files
+*.pyc
+/__pycache__/
+
+# macOS related files
+.DS_Store
+
+# built-in files 
+/utils/
+default.py
+dev.py
+general.py

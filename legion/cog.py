@@ -1,0 +1,2110 @@
+"""The legion cog: commands, views wiring, lobby timers, and the replay feed.
+
+Layering: commands/buttons -> this cog's service methods -> repos/services.
+Game rules live below (calculator/settlement/simulation); this file only
+orchestrates Discord I/O around them.
+"""
+
+import asyncio
+import random
+from datetime import datetime, timedelta
+
+import discord
+from discord import app_commands
+from discord.ext import commands
+from loguru import logger as log
+
+from maki.core import Maki
+
+from maki.cogs.legion import render, strings
+from maki.cogs.legion.calculator import (
+    gather_payout_chunks,
+    mastery_level_cost,
+    roll_drops,
+    roll_mutations,
+)
+from maki.cogs.legion.constants import (
+    CRAFT_MASTERY_PTS,
+    MASTERY_HARD_CAP,
+    ContentStatus,
+    EXPEDITION_MIN_HP_PCT,
+    LOBBY_SECONDS,
+    STARTER_POTION_KEY,
+    STARTER_WEAPONS,
+    MASTERY_KIND_WEAPONS,
+    USE_ITEM_MASTERY_GAP_PCT,
+    LifeSkillType,
+    MaterialKind,
+    StatBonusType,
+    WeaponSlot,
+)
+from maki.cogs.legion.model.model import (
+    ActiveSkill,
+    DungeonInstance,
+    DungeonParticipant,
+    GamePatch,
+    GatherSite,
+    HuntingGround,
+    Legion,
+    LifeSkillMastery,
+    Material,
+    Mob,
+    Player,
+    PlayerMaterial,
+    PlayerWeapon,
+    Recipe,
+    RecipeMaterial,
+    SiteYield,
+    Weapon,
+    WeaponActiveSkill,
+    WeaponCategory,
+    WeaponMastery,
+    WeaponPassiveSkill,
+)
+from maki.cogs.legion.content import PATCH
+from maki.cogs.legion.model.repository import (
+    ActivityRepo,
+    DungeonRepo,
+    InventoryRepo,
+    LegionRepo,
+    MasteryRepo,
+    PatchRepo,
+    PlayerRepo,
+)
+from maki.cogs.legion.seeds import (
+    apply_patch,
+    content_hash,
+    content_summary,
+    pending_removals,
+    validate_patch,
+)
+from maki.cogs.legion.settlement import SettlementService
+from maki.cogs.legion.simulation import (
+    build_mob_state,
+    build_player_state,
+    effective_max_hp,
+    run_simulation,
+)
+from maki.cogs.legion.utils import (
+    clean_legion_name,
+    clean_player_name,
+    patch_phase,
+    patch_timeline,
+)
+from maki.cogs.legion.views import (
+    CraftConfirmView,
+    CraftHomeView,
+    CraftSurfaceView,
+    RecipeDetailView,
+    KIND_CONSUMABLES,
+    KIND_WEAPONS,
+    DonateView,
+    GatherBusyView,
+    GatherIdleView,
+    GroundSelectView,
+    InventoryCategoryView,
+    InventoryHomeView,
+    LegionMasteryView,
+    LegionSettingsView,
+    LegionView,
+    LobbyView,
+    MembersView,
+    OnboardView,
+    CombatLogView,
+    PatchDecisionView,
+    PatchView,
+    ProfileView,
+    SettlementPaginator,
+    UseItemView,
+    WeaponDetailView,
+)
+
+
+class LegionCog(commands.Cog):
+    def __init__(self, bot: Maki):
+        self.bot = bot
+        self.players = PlayerRepo()
+        self.legions = LegionRepo()
+        self.inventory = InventoryRepo()
+        self.masteries = MasteryRepo()
+        self.activities = ActivityRepo()
+        self.dungeons = DungeonRepo()
+        self.settlement = SettlementService(
+            self.dungeons, self.masteries, self.inventory, self.legions
+        )
+        self.patches = PatchRepo()
+        self._lobby_tasks: dict[int, asyncio.Task] = {}   # legion_id -> timer
+        self._replay_tasks: set[asyncio.Task] = set()
+        self._pending_patch: GamePatch | None = None
+        self._patch_task: asyncio.Task | None = None
+        # Right-click a member -> Apps -> 使用道具: consumables on OTHERS,
+        # including the potion revive. Context menus can't live in cogs as
+        # decorated methods, so it's built here and (un)registered in
+        # cog_load/cog_unload.
+        self._use_item_menu = app_commands.ContextMenu(
+            name=strings.USE_ITEM_CONTEXT_NAME, callback=self.use_item_context
+        )
+        self._showoff_profile_menu = app_commands.ContextMenu(
+            name=strings.CHECK_PROFILE_CONTEXT_NAME, callback=self.showoff_profile_context
+        )
+
+    async def cog_load(self) -> None:
+        self.bot.tree.add_command(self._use_item_menu)
+        self.bot.tree.add_command(self._showoff_profile_menu)
+        voided = await self.dungeons.void_all_active()
+        if voided:
+            log.info("Voided {} orphaned expedition lobbies on boot.", voided)
+        # Resume a scheduled patch across restarts (or apply it if overdue).
+        self._pending_patch = await self.patches.pending()
+        if self._pending_patch is not None:
+            self._start_patch_timer(self._pending_patch)
+
+    async def cog_unload(self) -> None:
+        self.bot.tree.remove_command(
+            self._use_item_menu.name, type=discord.AppCommandType.user
+        )
+        self.bot.tree.remove_command(
+            self._showoff_profile_menu.name, type=discord.AppCommandType.user
+        )
+        # Graceful shutdown: lobbies are droppable (boot voids them), but an
+        # in-flight replay narrates already-settled rewards -- let it finish.
+        for task in self._lobby_tasks.values():
+            task.cancel()
+        if self._patch_task is not None:
+            self._patch_task.cancel()
+        if self._replay_tasks:
+            await asyncio.wait(self._replay_tasks, timeout=30)
+
+    # --- patch gate ----------------------------------------------------------
+
+    def _patch_blocked(self, session_start: bool = False) -> bool:
+        """The update lock: 'locked' blocks session starts, 'frozen'/'due'
+        blocks everything."""
+        pending = self._pending_patch
+        if pending is None or pending.lock_at is None:
+            return False
+        phase = patch_phase(
+            pending.lock_at, pending.apply_at, datetime.now().astimezone()
+        )
+        if phase in ("frozen", "due"):
+            return True
+        return phase == "locked" and session_start
+
+    async def _send_patch_blocked(self, interaction: discord.Interaction) -> None:
+        if interaction.response.is_done():
+            await interaction.followup.send(strings.PATCH_BLOCKED, ephemeral=True)
+        else:
+            await interaction.response.send_message(
+                strings.PATCH_BLOCKED, ephemeral=True
+            )
+
+    @staticmethod
+    async def _edit_tracked(
+        interaction: discord.Interaction, **kwargs
+    ) -> None:
+        """edit_message + hand the (new) view its message so on_timeout can
+        strip dead buttons even if the view is never pressed. Deferred-aware:
+        after _defer() the token-bound response is spent, so edits go through
+        the webhook (valid 15 min) instead of the 3-second initial window."""
+        view = kwargs.get("view")
+        if view is not None and interaction.message is not None:
+            view.message = interaction.message
+        if interaction.response.is_done():
+            await interaction.edit_original_response(**kwargs)
+        else:
+            await interaction.response.edit_message(**kwargs)
+
+    @staticmethod
+    async def _defer(interaction: discord.Interaction) -> None:
+        """Acknowledge a component press within Discord's 3s window BEFORE
+        doing DB work -- prevents 10062 Unknown interaction on slow paths."""
+        if not interaction.response.is_done():
+            await interaction.response.defer()
+
+    @staticmethod
+    async def _notify(interaction: discord.Interaction, content: str) -> None:
+        """Ephemeral notice that works before or after a defer."""
+        if interaction.response.is_done():
+            await interaction.followup.send(content, ephemeral=True)
+        else:
+            await interaction.response.send_message(content, ephemeral=True)
+
+    # --- interceptors ------------------------------------------------------
+
+    async def _legion_for(self, guild: discord.Guild) -> Legion:
+        return await self.legions.get_or_create(
+            guild.id, clean_legion_name(guild.name)
+        )
+
+    async def ensure_player(
+        self, interaction: discord.Interaction
+    ) -> Player | None:
+        """The onboarding interceptor: returns the (regen-applied) player, or
+        sends the ephemeral weapon-pick prompt and returns None. Also the
+        full-freeze patch gate: every game command passes through here."""
+        if self._patch_blocked():
+            await self._send_patch_blocked(interaction)
+            return None
+        player = await self.players.get(interaction.user.id)
+        legion = await self._legion_for(interaction.guild)
+        if player is None:
+            starters = await Weapon.filter(
+                key__in=list(STARTER_WEAPONS), status=ContentStatus.ENABLED
+            )
+            onboard_view = OnboardView(self, legion, starters)
+            prompt = strings.ONBOARD_PROMPT.format(legion=legion.name)
+            if interaction.response.is_done():
+                onboard_view.message = await interaction.followup.send(
+                    prompt, view=onboard_view, ephemeral=True, wait=True
+                )
+            else:
+                await interaction.response.send_message(
+                    prompt, view=onboard_view, ephemeral=True
+                )
+                onboard_view.message = await interaction.original_response()
+            return None
+        own_level = 0
+        if player.legion_id:
+            own = await player.legion
+            own_level = own.level
+        eff_max = await effective_max_hp(player, own_level)
+        await self.players.apply_regen(player, own_level, eff_max)
+        return player
+
+    async def ensure_alive(
+        self, interaction: discord.Interaction, player: Player
+    ) -> bool:
+        """Death penalty: the dead can't act. Potions (via inventory) are the
+        only way back."""
+        if player.health_points > 0:
+            return True
+        if interaction.response.is_done():
+            await interaction.followup.send(strings.DEAD_BLOCKED, ephemeral=True)
+        else:
+            await interaction.response.send_message(
+                strings.DEAD_BLOCKED, ephemeral=True
+            )
+        return False
+
+    async def ensure_battle_ready(
+        self, interaction: discord.Interaction, player: Player
+    ) -> bool:
+        """Expedition gate: dead OR below EXPEDITION_MIN_HP_PCT% can't fight."""
+        if not await self.ensure_alive(interaction, player):
+            return False
+        own_level = (await player.legion).level if player.legion_id else 0
+        eff_max = await effective_max_hp(player, own_level)
+        if player.health_points * 100 < eff_max * EXPEDITION_MIN_HP_PCT:
+            message = strings.HP_TOO_LOW.format(pct=EXPEDITION_MIN_HP_PCT)
+            if interaction.response.is_done():
+                await interaction.followup.send(message, ephemeral=True)
+            else:
+                await interaction.response.send_message(message, ephemeral=True)
+            return False
+        return True
+
+    async def ensure_not_afk(
+        self, interaction: discord.Interaction, player: Player
+    ) -> bool:
+        """The AFK interceptor: all game actions are blocked while gathering."""
+        activity = await self.activities.active_for(player)
+        if activity is None:
+            return True
+        message = strings.GATHER_BLOCKED.format(site=activity.site.name)
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
+        return False
+
+    async def ensure_not_in_expedition(
+        self, interaction: discord.Interaction, player: Player
+    ) -> bool:
+        """The expedition interceptor: while the player is in an ACTIVE
+        (pre-settlement) run -- any guild's -- they can't gather or enter
+        another expedition. One HP pool, one fight at a time."""
+        instance = await self.dungeons.active_for_player(player)
+        if instance is None:
+            return True
+        message = strings.HUNTING_EXPEDITION_BUSY.format(ground=instance.ground.name)
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
+        return False
+
+    async def onboard(
+        self, user: discord.abc.User, legion: Legion, weapon: Weapon
+    ) -> Player:
+        player = await self.players.get_or_create(
+            user.id, clean_player_name(user.display_name)
+        )
+        await self.players.join_legion(player, legion)
+        starter = await self.inventory.grant_weapon(player, weapon)
+        await self.inventory.equip(player, starter)  # starters are main-hand
+        # One potion in the pocket: the revive safety net.
+        potion = await Material.get_or_none(
+            key=STARTER_POTION_KEY, status=ContentStatus.ENABLED
+        )
+        if potion is not None:
+            await self.inventory.add_material(player, potion, 1)
+        # Start at FULL effective max (base + legion bonus + starter's HP
+        # passives) -- not base/effective, e.g. 100/120. Equip first: the
+        # starter weapon counts toward the max.
+        player.health_points = await effective_max_hp(player, legion.level)
+        player.hp_updated_at = datetime.now().astimezone()
+        await player.save(update_fields=["health_points", "hp_updated_at"])
+        return player
+
+    # --- /expedition ---------------------------------------------------------
+
+    @app_commands.command(
+        name=strings.EXPEDITION_COMMAND_NAME, description=strings.EXPEDITION_COMMAND_DESC
+    )
+    @app_commands.guild_only()
+    async def expedition(self, interaction: discord.Interaction) -> None:
+        if self._patch_blocked(session_start=True):
+            await self._send_patch_blocked(interaction)
+            return
+        player = await self.ensure_player(interaction)
+        if player is None or not await self.ensure_not_afk(interaction, player):
+            return
+        if not await self.ensure_battle_ready(interaction, player):
+            return
+        # Player-level check: already in SOME guild's pre-settlement run.
+        if not await self.ensure_not_in_expedition(interaction, player):
+            return
+        legion = await self._legion_for(interaction.guild)
+        if not legion.channel_id:
+            await interaction.response.send_message(
+                strings.LEGION_NOT_CONFIGURED, ephemeral=True
+            )
+            return
+        if await self.dungeons.active_for(legion) is not None:
+            await interaction.response.send_message(
+                strings.HUNTING_EXPEDITION_BUSY_SHORT, ephemeral=True
+            )
+            return
+        await self.show_ground_list(interaction)
+
+    async def show_ground_list(
+        self, interaction: discord.Interaction, edit: bool = False
+    ) -> None:
+        """Layer 1: embed listing every unlocked ground + 隨機遠征 button."""
+        legion = await self._legion_for(interaction.guild)
+        grounds = await self.dungeons.unlocked_grounds(legion.level)
+        if not grounds:
+            if edit:
+                await self._edit_tracked(interaction,
+                    content="No hunting grounds are open to this legion yet.",
+                    embed=None, view=None,
+                )
+            else:
+                await interaction.response.send_message(
+                    "No hunting grounds are open to this legion yet.", ephemeral=True
+                )
+            return
+        embed = render.ground_list_embed(grounds, self.bot.color)
+        view = GroundSelectView(self, interaction.user.id, grounds)
+        if edit:
+            await self._edit_tracked(interaction, content=None, embed=embed, view=view)
+        else:
+            await interaction.response.send_message(
+                embed=embed, view=view, ephemeral=True
+            )
+            view.message = await interaction.original_response()
+
+    async def show_ground_detail(
+        self, interaction: discord.Interaction, ground_id: int
+    ) -> None:
+        """Layer 2: one ground's intel -- danger, encounter pool, possible
+        drops -- with the launch button flipped to 發起遠征."""
+        await self._defer(interaction)
+        legion = await self._legion_for(interaction.guild)
+        grounds = await self.dungeons.unlocked_grounds(legion.level)
+        ground = next((g for g in grounds if g.id == ground_id), None)
+        if ground is None:  # disabled/re-locked since the list rendered
+            await self.show_ground_list(interaction, edit=True)
+            return
+        pool = await self.dungeons.ground_pool(ground)
+        drops = await self.dungeons.drop_preview([e.mob for e in pool])
+        embed = render.ground_detail_embed(ground, pool, drops, self.bot.color)
+        view = GroundSelectView(self, interaction.user.id, grounds, selected=ground)
+        await self._edit_tracked(interaction, content=None, embed=embed, view=view)
+
+    async def start_expedition(
+        self, interaction: discord.Interaction, is_random: bool, value: str
+    ) -> None:
+        await self._defer(interaction)
+        # Re-check at launch: the picker may be stale (joined another guild's
+        # lobby since it was opened).
+        player = await self.players.get(interaction.user.id)
+        if player is None or not await self.ensure_not_in_expedition(
+            interaction, player
+        ):
+            return
+        legion = await self._legion_for(interaction.guild)
+        grounds = await self.dungeons.unlocked_grounds(legion.level)
+        if is_random:
+            ground = random.choice(grounds)
+        else:
+            ground = next((g for g in grounds if str(g.id) == value), None)
+        if ground is None:
+            await self._edit_tracked(interaction,
+                content=strings.HUNTING_GROUND_GONE, embed=None, view=None
+            )
+            return
+        mob = await self.dungeons.roll_mob(ground)
+        if mob is None:
+            await self._edit_tracked(interaction,
+                content=strings.HUNTING_MOB_GONE, embed=None, view=None
+            )
+            return
+        expires_at = datetime.now().astimezone() + timedelta(seconds=LOBBY_SECONDS)
+        instance = await self.dungeons.spawn(
+            legion, ground, mob, expires_at, random_ground=is_random
+        )
+        if instance is None:
+            await self._edit_tracked(interaction,
+                content=strings.HUNTING_EXPEDITION_BUSY_SHORT, embed=None, view=None
+            )
+            return
+        await self.dungeons.join(instance, player)  # starter auto-joins
+
+        channel = interaction.guild.get_channel(legion.channel_id)
+        embed = render.lobby_embed(
+            ground, mob, is_random, [player.username], expires_at, self.bot.color
+        )
+        lobby_view = LobbyView(self, instance.id)
+        message = await channel.send(embed=embed, view=lobby_view)
+        lobby_view.message = message
+        await self._edit_tracked(interaction,
+            content=strings.EXPEDITION_INIT.format(channel=channel.mention),
+            embed=None, view=None,
+        )
+
+        task = asyncio.create_task(
+            self._run_lobby(instance.id, legion.id, message)
+        )
+        self._lobby_tasks[legion.id] = task
+        task.add_done_callback(
+            lambda _: self._lobby_tasks.pop(legion.id, None)
+        )
+
+    async def join_expedition(
+        self, interaction: discord.Interaction, instance_id: int
+    ) -> None:
+        if self._patch_blocked(session_start=True):
+            await self._send_patch_blocked(interaction)
+            return
+        await self._defer(interaction)
+        player = await self.ensure_player(interaction)
+        if player is None or not await self.ensure_not_afk(interaction, player):
+            return
+        if not await self.ensure_battle_ready(interaction, player):
+            return
+        instance = await DungeonInstance.get_or_none(id=instance_id).prefetch_related(
+            "ground", "mob"
+        )
+        if instance is None or instance.status != "active":
+            await self._notify(interaction, strings.HUNTING_EXPEDITION_OVER)
+            return
+        # One run at a time -- but re-pressing THIS lobby's join stays a
+        # harmless idempotent re-join, not a scolding.
+        active = await self.dungeons.active_for_player(player)
+        if active is not None and active.id != instance.id:
+            await self._notify(
+                interaction,
+                strings.HUNTING_EXPEDITION_BUSY.format(ground=active.ground.name),
+            )
+            return
+        await self.dungeons.join(instance, player)
+        names = [
+            dp.player.username
+            for dp in await DungeonParticipant.filter(
+                instance=instance
+            ).prefetch_related("player")
+        ]
+        embed = render.lobby_embed(
+            instance.ground,
+            instance.mob,
+            instance.random_ground,
+            names,
+            instance.expires_at,
+            self.bot.color,
+        )
+        await self._edit_tracked(interaction, embed=embed)
+
+    async def _run_lobby(
+        self, instance_id: int, legion_id: int, message: discord.Message
+    ) -> None:
+        await asyncio.sleep(LOBBY_SECONDS)
+        instance = await DungeonInstance.get_or_none(id=instance_id).prefetch_related(
+            "ground", "mob", "legion"
+        )
+        if instance is None or instance.status != "active":
+            return
+        participants = await DungeonParticipant.filter(
+            instance=instance
+        ).prefetch_related("player__legion")
+        if not participants:
+            await self.dungeons.expire(instance)
+            await message.edit(
+                embed=render.expired_embed(self.bot.color), view=None
+            )
+            return
+        task = asyncio.create_task(
+            self._run_fight(instance, participants, message)
+        )
+        self._replay_tasks.add(task)
+        task.add_done_callback(self._replay_tasks.discard)
+
+    async def _run_fight(
+        self,
+        instance: DungeonInstance,
+        participants: list[DungeonParticipant],
+        message: discord.Message,
+    ) -> None:
+        party = []
+        for dp in participants:
+            own_level = dp.player.legion.level if dp.player.legion else 0
+            party.append(await build_player_state(dp.player, own_level))
+        mob_state = await build_mob_state(
+            instance.mob, instance.ground.danger, len(party)
+        )
+        result = run_simulation(party, mob_state)
+
+        # Settle FIRST: rewards are committed before a single story message.
+        report = await self.settlement.settle(
+            instance, result.to_results(), won=result.won
+        )
+        # if report.upgrade_ready and instance.legion.channel_id:
+        #     channel = message.channel
+        #     await channel.send(
+        #         strings.LEGION_UPGRADE_READY.format(
+        #             legion=instance.legion.name, level=instance.legion.level + 1
+        #         )
+        #     )
+
+        # The round-by-round reply-chain replay is retired (unpopular): flip
+        # the lobby's countdown line to "preparation over", then post the
+        # results directly. The full log lives behind a 戰鬥紀錄 button that
+        # hands each presser an ephemeral rounds.log.
+        await message.edit(
+            embed=render.lobby_embed(
+                instance.ground,
+                instance.mob,
+                instance.random_ground,
+                [dp.player.username for dp in participants],
+                instance.expires_at,
+                self.bot.color,
+                started=True,
+            ),
+            view=None,
+        )
+        log_text = render.combat_log_text(result, mob_state.rounds_limit)
+        embeds, personal = render.settlement_embeds(report, result, self.bot.color)
+        if len(embeds) == 1:
+            view = CombatLogView(log_text)
+            view.message = await message.reply(embed=embeds[0], view=view)
+        else:
+            # Public pager (shared page state, open to all) + ephemeral
+            # my-result button + the log button.
+            pager = SettlementPaginator(embeds, personal, log_text=log_text)
+            pager.message = await message.reply(embed=embeds[0], view=pager)
+
+    # --- /legion ----------------------------------------------------------------
+
+    @app_commands.command(name=strings.LEGION_COMMAND_NAME, description=strings.LEGION_COMMAND_DESC)
+    @app_commands.guild_only()
+    async def legion(self, interaction: discord.Interaction) -> None:
+        player = await self.ensure_player(interaction)
+        if player is None:
+            return
+        await self.show_legion_home(interaction, edit=False)
+
+    async def show_legion_home(
+        self, interaction: discord.Interaction, edit: bool = True
+    ) -> None:
+        legion = await self._legion_for(interaction.guild)
+        player = await self.players.get(interaction.user.id)
+        member_count = await Player.filter(legion=legion).count()
+        sheet = await self.legions.upgrade_sheet(legion)
+        is_officer = interaction.user.guild_permissions.manage_guild or bool(
+            player and player.is_legion_manager
+        )
+        embed = render.legion_embed(legion, member_count, sheet, self.bot.color)
+        view = LegionView(self, interaction.user.id, legion, is_officer)
+        if edit:
+            await self._edit_tracked(interaction, embed=embed, view=view)
+        else:
+            await interaction.response.send_message(embed=embed, view=view)
+            view.message = await interaction.original_response()
+
+    async def _is_officer(
+        self, interaction: discord.Interaction, legion: Legion
+    ) -> bool:
+        if interaction.user.guild_permissions.manage_guild:
+            return True
+        player = await self.players.get(interaction.user.id)
+        return bool(
+            player and player.legion_id == legion.id and player.is_legion_manager
+        )
+
+    async def press_upgrade(
+        self, interaction: discord.Interaction, legion: Legion
+    ) -> None:
+        if not await self._is_officer(interaction, legion):
+            await interaction.response.send_message(
+                strings.LEGION_OFFICERS_ONLY, ephemeral=True
+            )
+            return
+        if await self.legions.upgrade(legion):
+            await interaction.response.send_message(
+                strings.LEGION_UPGRADE_DONE.format(
+                    legion=legion.name, level=legion.level
+                )
+            )
+        else:
+            await interaction.response.send_message(
+                strings.LEGION_UPGRADE_SHORT, ephemeral=True
+            )
+
+    async def show_members(
+        self, interaction: discord.Interaction, legion: Legion, page: int
+    ) -> None:
+        player = await self.players.get(interaction.user.id)
+        size = MembersView.PAGE_SIZE
+        total = await Player.filter(legion=legion).count()
+        pages = max(1, -(-total // size))
+        page = max(0, min(page, pages - 1))
+        entries = (
+            await Player.filter(legion=legion)
+            .order_by("-contribution")
+            .offset(page * size)
+            .limit(size)
+        )
+        await self._edit_tracked(interaction, 
+            embed=render.members_embed(
+                legion, entries, page, pages, self.bot.color
+            ),
+            view=MembersView(self, interaction.user.id, player, legion, page, pages),
+        )
+
+    async def show_donate(
+        self, interaction: discord.Interaction, legion: Legion, note: str | None = None
+    ) -> None:
+        """The donate panel: member's stacks tagged with upgrade-sheet needs."""
+        player = await self.players.get(interaction.user.id)
+        if player is None or player.legion_id != legion.id:
+            await interaction.response.send_message(
+                strings.DONATE_MEMBERS_ONLY, ephemeral=True
+            )
+            return
+        stacks = await PlayerMaterial.filter(
+            player=player, quantity__gt=0
+        ).prefetch_related("material")
+        sheet = await self.legions.upgrade_sheet(legion)
+        sheet_map = {mat.id: (need, have) for mat, need, have in sheet}
+        await self._edit_tracked(interaction, 
+            content=note,
+            embed=render.donate_embed(legion, stacks, sheet_map, self.bot.color),
+            view=DonateView(
+                self, interaction.user.id, player, legion, stacks, sheet_map
+            ),
+        )
+
+    async def do_donate(
+        self,
+        interaction: discord.Interaction,
+        player: Player,
+        legion: Legion,
+        material_id: int,
+        qty: int,
+    ) -> None:
+        await self._defer(interaction)
+        if not await self.ensure_not_afk(interaction, player):
+            return
+        if not await self.ensure_alive(interaction, player):
+            return
+        material = await Material.get_or_none(id=material_id)
+        contri = (
+            await self.legions.donate(player, legion, material, qty)
+            if material is not None
+            else None
+        )
+        if contri is not None:
+            note = strings.LEGION_DONATED.format(
+                qty=qty, material=material.name, contri=contri
+            )
+            await self._announce_donation(interaction, legion, player, material, qty)
+        else:
+            note = strings.LEGION_DONATE_SHORT.format(
+                material=material.name if material else "?"
+            )
+        await self.show_donate(interaction, legion, note=note)
+
+    async def _announce_donation(
+        self,
+        interaction: discord.Interaction,
+        legion: Legion,
+        player: Player,
+        material: Material,
+        qty: int,
+    ) -> None:
+        """Post a public donation shout to the legion's appointed channel.
+        Silently no-ops if no channel is configured or reachable."""
+        if not legion.channel_id or interaction.guild is None:
+            return
+        channel = interaction.guild.get_channel(legion.channel_id)
+        if channel is None:
+            return
+        # `have` from the sheet already reflects the just-committed donation
+        # (fresh query); off-sheet materials fall back to a plain stockpile total.
+        sheet = await self.legions.upgrade_sheet(legion)
+        sheet_map = {mat.id: (need, have) for mat, need, have in sheet}
+        if material.id in sheet_map:
+            need, have = sheet_map[material.id]
+        else:
+            need, have = None, await self.legions.stockpiled(legion, material)
+        embed = render.donation_announce_embed(
+            player.username, qty, material, have, need, self.bot.color
+        )
+        await channel.send(embed=embed)
+
+    async def show_legion_settings(
+        self, interaction: discord.Interaction, legion: Legion, note: str | None = None
+    ) -> None:
+        """Settings layer: current name/channel/managers + the selects."""
+        if not await self._is_officer(interaction, legion):
+            await interaction.response.send_message(
+                strings.LEGION_OFFICERS_ONLY, ephemeral=True
+            )
+            return
+        managers = await Player.filter(legion=legion, is_legion_manager=True)
+        await self._edit_tracked(
+            interaction,
+            content=note,
+            embed=render.legion_settings_embed(legion, managers, self.bot.color),
+            view=LegionSettingsView(self, interaction.user.id, legion),
+        )
+
+    async def set_channel(
+        self, interaction: discord.Interaction, legion: Legion, channel_id: int
+    ) -> None:
+        if not await self._is_officer(interaction, legion):
+            await interaction.response.send_message(
+                strings.LEGION_OFFICERS_ONLY, ephemeral=True
+            )
+            return
+        legion.channel_id = channel_id
+        await legion.save(update_fields=["channel_id"])
+        await self.show_legion_settings(
+            interaction, legion,
+            note=strings.LEGION_CHANNEL_SET.format(channel=f"<#{channel_id}>"),
+        )
+
+    async def appoint_manager(
+        self, interaction: discord.Interaction, legion: Legion, user: discord.User
+    ) -> None:
+        if not await self._is_officer(interaction, legion):
+            await interaction.response.send_message(
+                strings.LEGION_OFFICERS_ONLY, ephemeral=True
+            )
+            return
+        player = await self.players.get(user.id)
+        if player is None or player.legion_id != legion.id:
+            await interaction.response.send_message(
+                strings.DONATE_MEMBERS_ONLY, ephemeral=True
+            )
+            return
+        player.is_legion_manager = True
+        await player.save(update_fields=["is_legion_manager"])
+        await self.show_legion_settings(
+            interaction, legion,
+            note=strings.LEGION_MANAGER_SET.format(player=player.username),
+        )
+
+    async def set_legion_name(
+        self, interaction: discord.Interaction, legion: Legion, raw: str
+    ) -> None:
+        if not await self._is_officer(interaction, legion):
+            await interaction.response.send_message(
+                strings.LEGION_OFFICERS_ONLY, ephemeral=True
+            )
+            return
+        legion.name = clean_legion_name(raw)
+        await legion.save(update_fields=["name"])
+        await self.show_legion_settings(
+            interaction, legion,
+            note=strings.LEGION_RENAMED.format(name=legion.name),
+        )
+
+    async def press_join_legion(
+        self, interaction: discord.Interaction, legion: Legion
+    ) -> None:
+        player = await self.players.get(interaction.user.id)
+        if player is None:
+            await interaction.response.send_message(
+                strings.ONBOARD_ANY_CMD, ephemeral=True
+            )
+            return
+        if not await self.ensure_not_afk(interaction, player):
+            return
+        if player.legion_id == legion.id:
+            await interaction.response.send_message(
+                strings.LEGION_ALREADY_MEMBER, ephemeral=True
+            )
+            return
+        await self.players.join_legion(player, legion)
+        await interaction.response.send_message(
+            strings.LEGION_WELCOME.format(legion=legion.name),
+            ephemeral=True,
+        )
+
+    async def press_leave_legion(
+        self, interaction: discord.Interaction, legion: Legion
+    ) -> None:
+        player = await self.players.get(interaction.user.id)
+        if player is None or player.legion_id != legion.id:
+            await interaction.response.send_message(
+                strings.LEGION_NOT_MEMBER, ephemeral=True
+            )
+            return
+        if not await self.ensure_not_afk(interaction, player):
+            return
+        await self.players.leave_legion(player)
+        await interaction.response.send_message(
+            strings.LEGION_LEFT.format(legion=legion.name), ephemeral=True
+        )
+
+    # --- /profile -----------------------------------------------------------------
+
+    @app_commands.command(name=strings.PROFILE_COMMAND_NAME, description=strings.PROFILE_COMMAND_DESC)
+    async def profile(self, interaction: discord.Interaction) -> None:
+        player = await self.ensure_player(interaction)
+        if player is None:
+            return
+        await self.show_profile(interaction, player, edit=False)
+
+    async def show_profile(
+        self, interaction: discord.Interaction, player: Player, edit: bool = True
+    ) -> None:
+        legion = await player.legion if player.legion_id else None
+        equipped = {
+            slot: await self.inventory.equipped(player, slot)
+            for slot in (WeaponSlot.MAIN, WeaponSlot.SUB)
+        }
+        eff_max = await effective_max_hp(player, legion.level if legion else 0)
+        embed = render.profile_embed(
+            player, legion, equipped, self.bot.color, effective_max=eff_max
+        )
+        view = ProfileView(self, interaction.user.id, player)
+
+        # Active food buff, if any. ensure_player already flushed regen, but
+        # the timestamp check guards the sub-minute window where a buff has
+        # ended without a flush clearing it yet.
+        if (
+            player.regen_buff_rate
+            and player.regen_buff_until
+            and player.regen_buff_until > datetime.now().astimezone()
+        ):
+            embed.add_field(
+                name=strings.FOOD_BUFF_TITLE,
+                value=strings.FOOD_BUFF_ACTIVE.format(
+                    value=player.regen_buff_rate,
+                    until=int(player.regen_buff_until.timestamp()),
+                ),
+                inline=False,
+            )
+
+        if edit:
+            await self._edit_tracked(interaction, embed=embed, view=view)
+        else:
+            await interaction.response.send_message(
+                embed=embed, view=view, ephemeral=True
+            )
+            view.message = await interaction.original_response()
+
+    async def show_inventory(
+        self, interaction: discord.Interaction, player: Player
+    ) -> None:
+        """Layer 1: all materials + equipped weapons; category select."""
+        stacks = await PlayerMaterial.filter(
+            player=player, quantity__gt=0
+        ).prefetch_related("material")
+        equipped = await PlayerWeapon.filter(
+            player=player, equipped_slot__isnull=False
+        ).prefetch_related("weapon")
+        await self._edit_tracked(interaction, 
+            content=None,
+            embed=render.inventory_home_embed(stacks, equipped, self.bot.color),
+            view=InventoryHomeView(self, interaction.user.id, player),
+        )
+
+    async def show_inventory_category(
+        self,
+        interaction: discord.Interaction,
+        player: Player,
+        kind: str,
+        note: str | None = None,
+    ) -> None:
+        """Layer 2: one category's detailed embed + item select."""
+        if kind == KIND_WEAPONS:
+            weapons = await PlayerWeapon.filter(player=player).prefetch_related(
+                "weapon__category"
+            )
+            embed = render.inventory_weapons_embed(weapons, self.bot.color)
+            view = InventoryCategoryView(
+                self, interaction.user.id, player, kind, weapons=weapons
+            )
+        else:
+            consumables = await PlayerMaterial.filter(
+                player=player,
+                quantity__gt=0,
+                material__kind__in=[
+                    MaterialKind.FOOD, MaterialKind.POTION, MaterialKind.CONSUMABLE
+                ],
+            ).prefetch_related("material")
+            embed = render.inventory_consumables_embed(consumables, self.bot.color)
+            view = InventoryCategoryView(
+                self, interaction.user.id, player, kind, consumables=consumables
+            )
+        await self._edit_tracked(interaction, 
+            content=note, embed=embed, view=view
+        )
+
+    async def show_mastery(
+        self,
+        interaction: discord.Interaction,
+        player: Player,
+        kind: str = MASTERY_KIND_WEAPONS,
+    ) -> None:
+        """One mastery pool per page; the view's select flips between them."""
+        if kind == MASTERY_KIND_WEAPONS:
+            masteries = await WeaponMastery.filter(player=player).prefetch_related(
+                "category"
+            )
+        else:
+            masteries = await LifeSkillMastery.filter(player=player)
+        await self._edit_tracked(interaction,
+            embed=render.mastery_embed(kind, masteries, self.bot.color),
+            view=LegionMasteryView(self, interaction.user.id, player, kind),
+        )
+
+    async def show_weapon_detail(
+        self,
+        interaction: discord.Interaction,
+        player: Player,
+        pw_id: int,
+        note: str | None = None,
+    ) -> None:
+        """Layer 3: one weapon in full -- skills with mutation-adjusted values
+        and lock states from the player's mastery."""
+        await self._defer(interaction)
+        pw = await PlayerWeapon.get_or_none(id=pw_id).prefetch_related(
+            "weapon__category"
+        )
+        if pw is None or pw.player_id != player.id:
+            await self.show_inventory_category(interaction, player, KIND_WEAPONS)
+            return
+        actives = (
+            await WeaponActiveSkill.filter(
+                weapon=pw.weapon, active_skill__status=ContentStatus.ENABLED
+            )
+            .order_by("tier")
+            .prefetch_related("active_skill")
+        )
+        passives = (
+            await WeaponPassiveSkill.filter(
+                weapon=pw.weapon, passive_skill__status=ContentStatus.ENABLED
+            )
+            .order_by("tier")
+            .prefetch_related("passive_skill")
+        )
+        mastery = await WeaponMastery.get_or_none(
+            player=player, category_id=pw.weapon.category_id
+        )
+        await self._edit_tracked(
+            interaction,
+            content=note,
+            embed=render.weapon_detail_embed(
+                pw, actives, passives,
+                mastery.level if mastery else 0,
+                self.bot.color,
+            ),
+            view=WeaponDetailView(self, interaction.user.id, player, pw.id),
+        )
+
+    async def press_detail_equip(
+        self, interaction: discord.Interaction, player: Player, pw_id: int
+    ) -> None:
+        """Equip from the detail layer, then re-render the SAME detail."""
+        await self._defer(interaction)
+        if not await self.ensure_not_afk(interaction, player):
+            return
+        pw = await PlayerWeapon.get_or_none(id=pw_id)
+        if pw is None or await self.inventory.equip(player, pw) is None:
+            await self._notify(interaction, "Can't equip that.")
+            return
+        await self.show_weapon_detail(interaction, player, pw_id)
+
+    async def press_use(
+        self,
+        interaction: discord.Interaction,
+        player: Player,
+        selection: str | None,
+    ) -> None:
+        """The unified Use button: weapons equip into their designated hand,
+        consumables get consumed."""
+        if selection is None:
+            await self._notify(interaction, "Pick an item first.")
+            return
+        await self._defer(interaction)
+        if not await self.ensure_not_afk(interaction, player):
+            return
+        kind, _, raw_id = selection.partition(":")
+        if kind == "w":
+            pw = await PlayerWeapon.get_or_none(id=int(raw_id))
+            if pw is None or await self.inventory.equip(player, pw) is None:
+                await self._notify(interaction, "Can't equip that.")
+                return
+            await self.show_inventory_category(interaction, player, KIND_WEAPONS)
+        else:
+            _, note = await self._use_consumable(player, int(raw_id))
+            await self.show_inventory_category(
+                interaction, player, KIND_CONSUMABLES, note=note
+            )
+
+    async def press_dismantle(
+        self,
+        interaction: discord.Interaction,
+        player: Player,
+        selection: str | None,
+    ) -> None:
+        if selection is None or not selection.startswith("w:"):
+            await self._notify(interaction, strings.INVENTORY_DISMANTLE_WEAPON_ONLY)
+            return
+        await self._defer(interaction)
+        pw = await PlayerWeapon.get_or_none(id=int(selection.partition(":")[2])).prefetch_related("weapon")
+        if pw is None or pw.player_id != player.id:
+            await self._notify(interaction, strings.INVENTORY_CANNOT_DISMANTLE)
+            return
+        if pw.equipped_slot is not None:
+            await self._notify(interaction, strings.INVENTORY_CANNOT_DISMANTLE_EQUIPPED)
+            return
+        name = pw.weapon.name
+        await pw.delete()
+        await self.show_inventory_category(
+            interaction, player, KIND_WEAPONS,
+            note=strings.INVENTORY_DISMANTLED.format(weapon=name),
+        )
+
+    async def _use_consumable(
+        self, player: Player, material_id: int, target: Player | None = None
+    ) -> tuple[Material | None, str]:
+        """Consume one; returns (material, note) -- material is None when
+        nothing was actually spent (the note then explains why).
+
+        ``player`` PAYS the stack; the effect lands on ``target`` when given
+        (the use-item context menu), otherwise on the user themselves.
+
+        FOOD: alive-only, grants the regen-over-time buff (rate = value
+        HP/min, duration in minutes; re-eating overwrites the buff).
+        POTION (and legacy consumable): instant heal -- and the REVIVE path:
+        usable at 0 HP, restoring up to its value.
+        """
+        recipient = target if target is not None else player
+        on_other = recipient.id != player.id
+        material = await Material.get_or_none(id=material_id)
+        if (
+            material is None
+            or material.status != ContentStatus.ENABLED
+            or material.kind not in (
+                MaterialKind.FOOD, MaterialKind.POTION, MaterialKind.CONSUMABLE
+            )
+            or material.stat_bonus_type != StatBonusType.HP
+        ):
+            return None, "That can't be used right now."
+
+        own_level = (await recipient.legion).level if recipient.legion_id else 0
+        eff_max = await effective_max_hp(recipient, own_level)
+
+        if material.kind == MaterialKind.FOOD:
+            if recipient.health_points <= 0:
+                if on_other:
+                    return None, strings.USE_ITEM_TARGET_DEAD_FOOD.format(
+                        target=recipient.username
+                    )
+                return None, strings.DEAD_BLOCKED
+            if not await self.inventory.consume(player, {material.id: 1}):
+                return None, strings.INVENTORY_QTY_NOT_ENOUGH
+            # Flush the elapsed regen window BEFORE changing the rate, so the
+            # new buff can't retroactively apply to time already passed.
+            await self.players.apply_regen(recipient, own_level, eff_max)
+            duration = material.duration or 0
+            recipient.regen_buff_rate = material.stat_bonus_value or 0
+            recipient.regen_buff_until = datetime.now().astimezone() + timedelta(
+                minutes=duration
+            )
+            await recipient.save(
+                update_fields=["regen_buff_rate", "regen_buff_until"]
+            )
+            if on_other:
+                return material, strings.FOOD_BUFF_APPLIED_OTHER.format(
+                    target=recipient.username,
+                    material=material.name,
+                    value=recipient.regen_buff_rate,
+                    duration=duration,
+                )
+            return material, strings.FOOD_BUFF_APPLIED.format(
+                material=material.name,
+                value=recipient.regen_buff_rate,
+                duration=duration,
+            )
+
+        # potion / legacy: instant, revive-capable
+        if not await self.inventory.consume(player, {material.id: 1}):
+            return None, strings.INVENTORY_QTY_NOT_ENOUGH
+        was_dead = recipient.health_points <= 0
+        healed = min(
+            material.stat_bonus_value or 0,
+            eff_max - recipient.health_points,
+        )
+        recipient.health_points += healed
+        # Re-bookmark so a revive doesn't backpay dead downtime as regen.
+        recipient.hp_updated_at = datetime.now().astimezone()
+        await recipient.save(update_fields=["health_points", "hp_updated_at"])
+        if was_dead:
+            if on_other:
+                return material, strings.REVIVED_OTHER.format(
+                    target=recipient.username, material=material.name, healed=healed
+                )
+            return material, strings.REVIVED.format(
+                material=material.name, healed=healed
+            )
+        if on_other:
+            return material, strings.INVENTORY_USED_OTHER.format(
+                target=recipient.username, material=material.name, healed=healed
+            )
+        return material, strings.INVENTORY_USED.format(
+            material=material.name,
+            healed=healed,
+            hp=recipient.health_points,
+            max_hp=recipient.max_health_points,
+        )
+
+    # --- use item on others (context menu) -----------------------------------------
+
+    async def use_item_context(
+        self, interaction: discord.Interaction, member: discord.Member
+    ) -> None:
+        """Entry: right-click member -> Apps -> 使用道具. Ephemeral picker of
+        the INVOKER'S consumables; effects land on the target (revive included)."""
+        if interaction.guild is None:
+            return
+        player = await self.ensure_player(interaction)
+        if player is None or not await self.ensure_not_afk(interaction, player):
+            return
+        if not await self.ensure_alive(interaction, player):
+            return  # the dead can't nurse others; self-revive via inventory
+        if member.bot:
+            await self._notify(interaction, strings.USE_ITEM_TARGET_NOT_PLAYER)
+            return
+        target = await self.players.get(member.id)
+        if target is None:
+            await self._notify(interaction, strings.USE_ITEM_TARGET_NOT_PLAYER)
+            return
+        if not await self._mastery_gap_ok(player, target):
+            await self._notify(
+                interaction,
+                strings.USE_ITEM_MASTERY_GAP.format(target=target.username),
+            )
+            return
+        stacks = await self._usable_stacks(player)
+        if not stacks:
+            await self._notify(interaction, strings.USE_ITEM_NONE)
+            return
+        view = UseItemView(self, interaction.user.id, member.id, stacks)
+        await interaction.response.send_message(
+            strings.USE_ITEM_PICK.format(target=target.username),
+            view=view, ephemeral=True,
+        )
+        view.message = await interaction.original_response()
+
+    async def use_item_on(
+        self,
+        interaction: discord.Interaction,
+        target_discord_id: int,
+        material_id: int,
+    ) -> None:
+        """Select callback: spend the invoker's stack on the target."""
+        await self._defer(interaction)
+        player = await self.players.get(interaction.user.id)
+        target = await self.players.get(target_discord_id)
+        if player is None or target is None:
+            await self._notify(interaction, strings.USE_ITEM_TARGET_NOT_PLAYER)
+            return
+        if player.health_points <= 0:  # died since the picker opened
+            await self._notify(interaction, strings.DEAD_BLOCKED)
+            return
+        on_other = target.id != player.id
+        if on_other and not await self._mastery_gap_ok(player, target):
+            await self._edit_tracked(
+                interaction,
+                content=strings.USE_ITEM_MASTERY_GAP.format(target=target.username),
+                view=None,
+            )
+            return
+        used, note = await self._use_consumable(
+            player, material_id, target=target if on_other else None
+        )
+        if used is not None and on_other:
+            # The flavor line goes PUBLIC ("X 對 Y 使用了 Z，Z 將 Y 從鬼門關
+            # 拉了回來…"); the user's ephemeral just gets the short receipt.
+            legion = await self._legion_for(interaction.guild)
+            channel = (
+                interaction.guild.get_channel(legion.channel_id)
+                if legion.channel_id else None
+            )
+            if channel is not None:
+                await channel.send(
+                    strings.USE_ITEM_ANNOUNCE.format(
+                        player=player.username,
+                        target=target.username,
+                        material=used.name,
+                        result=note,
+                    )
+                )
+            note = strings.USE_ITEM_SHORT_NOTE.format(
+                target=target.username, material=used.name
+            )
+        stacks = await self._usable_stacks(player)
+        if stacks:
+            view = UseItemView(self, interaction.user.id, target_discord_id, stacks)
+            await self._edit_tracked(
+                interaction,
+                content=f"{note}\n{strings.USE_ITEM_PICK.format(target=target.username)}",
+                view=view,
+            )
+        else:
+            await self._edit_tracked(interaction, content=note, view=None)
+
+    async def _mastery_gap_ok(self, feeder: Player, feedee: Player) -> bool:
+        """Anti-mule gate: the FEEDER'S total mastery may trail the target's
+        by at most USE_ITEM_MASTERY_GAP_PCT -- a fresh AFK alt can't farm
+        potions and pump them up to a veteran main. Feeding downward
+        (veteran helping a newbie) is always fine."""
+        if feeder.id == feedee.id:
+            return True
+        feeder_total = await self.masteries.total_mastery(feeder)
+        feedee_total = await self.masteries.total_mastery(feedee)
+        return feeder_total * 100 >= feedee_total * (100 - USE_ITEM_MASTERY_GAP_PCT)
+
+    async def _usable_stacks(self, player: Player) -> list[PlayerMaterial]:
+        return await PlayerMaterial.filter(
+            player=player,
+            quantity__gt=0,
+            material__status=ContentStatus.ENABLED,
+            material__kind__in=[
+                MaterialKind.FOOD, MaterialKind.POTION, MaterialKind.CONSUMABLE
+            ],
+        ).prefetch_related("material")
+    
+    async def showoff_profile_context(self, interaction: discord.Interaction, member: discord.Member) -> None:
+        """Allow others to summon a visable profile of a player, but only if they have one (onboarded)."""
+        if interaction.guild is None:
+            return
+        if self._patch_blocked():  # frozen blocks ALL commands
+            await self._send_patch_blocked(interaction)
+            return
+        # NOTE: deliberately no ensure_player here -- non-players may view
+        # others' profiles; they just can't summon their own.
+        if member.bot:
+            await self._notify(interaction, strings.PROFILE_TARGET_NOT_PLAYER)
+            return
+        target = await self.players.get(member.id)
+        if target is None:
+            await self._notify(interaction, strings.PROFILE_TARGET_NOT_PLAYER)
+            return
+        await self._defer(interaction)  # several queries follow; 3s token
+
+        legion = await target.legion if target.legion_id else None
+        eff_max = await effective_max_hp(target, legion.level if legion else 0)
+        # Flush the TARGET'S lazy regen (and any overdue auto-revive): they
+        # may not have run a command in hours -- don't show stale HP.
+        await self.players.apply_regen(target, legion.level if legion else 0, eff_max)
+        equipped = {
+            slot: await self.inventory.equipped(target, slot)
+            for slot in (WeaponSlot.MAIN, WeaponSlot.SUB)
+        }
+        embed = render.profile_embed(
+            target, legion, equipped, self.bot.color, effective_max=eff_max
+        )
+        embed.set_author(name=strings.SHOWOFF_PROFILE_TITLE.format(
+            name=target.username),
+            icon_url=member.display_avatar.url
+        )
+        masteries = await WeaponMastery.filter(player=target).order_by("-level", "-exp").limit(2).prefetch_related(
+            "category"
+        )
+        for mastery in masteries:
+            if mastery.level >= MASTERY_HARD_CAP:
+                value = f"{render.progress_bar(100)}\n-# {strings.MAX_EMOJI}"
+            else:
+                need = mastery_level_cost(mastery.level + 1)
+                value = f"{render.progress_bar(mastery.exp / max(1, need) * 100)}\n-# {mastery.exp}/{need}"
+            embed.add_field(
+                name=strings.MASTERY_SUMMARY.format(
+                    category=mastery.category.name, level=mastery.level
+                ),
+                value=value,
+                inline=False,
+            )
+
+        embed.set_footer(text=strings.SHOWOFF_PROFILE_FOOTER.format(
+            author=interaction.user.display_name
+        ))
+        await interaction.followup.send(embed=embed)  # public by design
+
+    # --- /gatherer -----------------------------------------------------------------
+
+    @app_commands.command(
+        name=strings.GATHERER_COMMAND_NAME, description=strings.GATHERER_COMMAND_DESC
+    )
+    @app_commands.guild_only()
+    async def gatherer(self, interaction: discord.Interaction) -> None:
+        player = await self.ensure_player(interaction)
+        if player is None:
+            return
+        activity = await self.activities.active_for(player)
+        if activity is not None:
+            possible = [
+                y.material.name
+                for y in await SiteYield.filter(
+                    site=activity.site
+                ).prefetch_related("material")
+            ]
+            busy_view = GatherBusyView(self, interaction.user.id, player)
+            await interaction.response.send_message(
+                embed=render.gather_busy_embed(activity, possible, self.bot.color),
+                view=busy_view,
+                ephemeral=True,
+            )
+            busy_view.message = await interaction.original_response()
+            return
+        if not await self.ensure_not_in_expedition(interaction, player):
+            return
+        # Sites unlock off the player's OWN legion -- gather loot is personal,
+        # so visiting a higher-level guild must not open its sites (unlike
+        # expeditions, which are the guild's activity with an outsider tax).
+        own_level = (await player.legion).level if player.legion_id else 0
+        sites = await self.activities.unlocked_sites(own_level)
+        yields_by_site: dict[int, list[str]] = {}
+        for y in await SiteYield.filter(
+            site_id__in=[s.id for s in sites],
+            material__status=ContentStatus.ENABLED,
+        ).prefetch_related("material"):
+            yields_by_site.setdefault(y.site_id, []).append(y.material.name)
+        idle_view = GatherIdleView(self, interaction.user.id, player, sites)
+        await interaction.response.send_message(
+            embed=render.gather_idle_embed(sites, yields_by_site, self.bot.color),
+            view=idle_view,
+            ephemeral=True,
+        )
+        idle_view.message = await interaction.original_response()
+
+    async def start_gather(
+        self, interaction: discord.Interaction, player: Player, site_id: int
+    ) -> None:
+        if self._patch_blocked(session_start=True):
+            await self._send_patch_blocked(interaction)
+            return
+        if not await self.ensure_alive(interaction, player):
+            return
+        if not await self.ensure_not_in_expedition(interaction, player):
+            return
+        # Authoritative unlock check at START, not just at listing -- a stale
+        # view (or a legion switch since) must not start a locked site.
+        own_level = (await player.legion).level if player.legion_id else 0
+        sites = await self.activities.unlocked_sites(own_level)
+        site = next((s for s in sites if s.id == site_id), None)
+        if site is None:
+            await interaction.response.send_message(strings.GATHER_NO_SUCH_SITE, ephemeral=True)
+            return
+        activity = await self.activities.start(player, site)
+        if activity is None:
+            await interaction.response.send_message(
+                strings.GATHER_BLOCKED_SHORT, ephemeral=True
+            )
+            return
+        await self._edit_tracked(interaction, 
+            content=strings.GATHER_STARTED.format(site=site.name),
+            embed=None,
+            view=None,
+        )
+
+    async def stop_gather(
+        self, interaction: discord.Interaction, player: Player
+    ) -> None:
+        await self._defer(interaction)
+        activity = await self.activities.active_for(player)
+        if activity is None:
+            await interaction.response.send_message(
+                strings.GATHER_NOTHING, ephemeral=True
+            )
+            return
+        elapsed = await self.activities.stop(activity)
+        mastery = await LifeSkillMastery.get_or_none(
+            player=player, skill=activity.skill
+        )
+        level = mastery.level if mastery else 0
+        chunks, pts = gather_payout_chunks(elapsed, level)
+
+        yields = await SiteYield.filter(
+            site=activity.site, material__status=ContentStatus.ENABLED
+        ).prefetch_related("material")
+        materials = {y.material_id: y.material for y in yields}
+        rolled = roll_drops(yields, chunks)
+        loot_parts = []
+        for material_id, qty in rolled.items():
+            await self.inventory.add_material(player, materials[material_id], qty)
+            loot_parts.append(f"{qty}× {materials[material_id].name}")
+        if pts:
+            await self.masteries.grant_life(player, activity.skill, pts)
+
+        result = strings.GATHER_STOPPED.format(
+            site=activity.site.name,
+            hours=elapsed // 60,
+            minutes=elapsed % 60,
+        )
+        if loot_parts:
+            result += strings.GATHER_RESULT.format(
+                loot=", ".join(loot_parts), pts=pts
+            )
+        else:
+            result += strings.GATHER_RESULT_EMPTY
+
+        await self._edit_tracked(interaction, 
+            content=result,
+            embed=None,
+            view=None,
+        )
+
+    # --- /craft ---------------------------------------------------------------------
+
+    @app_commands.command(name=strings.CRAFTING_COMMAND_NAME, description=strings.CRAFTING_COMMAND_DESC)
+    @app_commands.guild_only()
+    async def craft_command(self, interaction: discord.Interaction) -> None:
+        player = await self.ensure_player(interaction)
+        if player is None or not await self.ensure_not_afk(interaction, player):
+            return
+        await self.show_craft_home(interaction, player, edit=False)
+
+    async def _craft_groups(
+        self, player: Player
+    ) -> tuple[dict[str, list], dict]:
+        """Enabled recipes grouped by workstation, marked unlocked-by-mastery,
+        plus the player's life-skill levels."""
+        levels = {
+            m.skill: m.level for m in await LifeSkillMastery.filter(player=player)
+        }
+        groups: dict[str, list] = {"forge": [], "cook": [], "brew": []}
+        for recipe in await Recipe.filter(status=ContentStatus.ENABLED):
+            if recipe.skill is None:
+                groups["forge"].append((recipe, True))
+            else:
+                unlocked = (
+                    levels.get(recipe.skill, 0) >= recipe.mastery_level_required
+                )
+                groups[recipe.skill.value].append((recipe, unlocked))
+        return groups, levels
+
+    async def show_craft_home(
+        self, interaction: discord.Interaction, player: Player, edit: bool = True
+    ) -> None:
+        groups, levels = await self._craft_groups(player)
+        embed = render.craft_home_embed(groups, levels, self.bot.color)
+        view = CraftHomeView(self, interaction.user.id, player)
+        if edit:
+            await self._edit_tracked(interaction, 
+                content=None, embed=embed, view=view
+            )
+        else:
+            await interaction.response.send_message(
+                embed=embed, view=view, ephemeral=True
+            )
+            view.message = await interaction.original_response()
+
+    async def show_craft_surface(
+        self,
+        interaction: discord.Interaction,
+        player: Player,
+        surface: str,
+        note: str | None = None,
+    ) -> None:
+        groups, _ = await self._craft_groups(player)
+        entries = []
+        for recipe, unlocked in groups.get(surface, []):
+            inputs = await RecipeMaterial.filter(recipe=recipe).prefetch_related(
+                "material"
+            )
+            text = ", ".join(strings.CRAFT_MAT_DETAIL.format(name=i.material.name, count=i.quantity) for i in inputs)
+            entries.append((recipe, unlocked, text))
+        craftable = [r for r, unlocked, _ in entries if unlocked]
+        embeds = render.craft_surface_embed(surface, entries, self.bot.color)
+        await self._edit_tracked(interaction,
+            content=note,
+            embed=embeds[0],
+            view=CraftSurfaceView(
+                self, interaction.user.id, player, surface, craftable,
+                embeds=embeds,
+            ),
+        )
+
+    async def _recipe_costs(self, recipe: Recipe, player: Player):
+        """``([(material, need, have)], affordable)`` for a recipe."""
+        inputs = []
+        affordable = True
+        for rm in await RecipeMaterial.filter(recipe=recipe).prefetch_related(
+            "material"
+        ):
+            have = await self.inventory.quantity(player, rm.material)
+            inputs.append((rm.material, rm.quantity, have))
+            if have < rm.quantity:
+                affordable = False
+        return inputs, affordable
+
+    async def _recipe_mastery_ok(self, recipe: Recipe, player: Player) -> bool:
+        if recipe.skill is None:
+            return True
+        mastery = await LifeSkillMastery.get_or_none(
+            player=player, skill=recipe.skill
+        )
+        return (mastery.level if mastery else 0) >= recipe.mastery_level_required
+
+    async def show_recipe_detail(
+        self,
+        interaction: discord.Interaction,
+        player: Player,
+        recipe_id: int,
+        note: str | None = None,
+    ) -> None:
+        """Craft layer 3: the recipe in full -- result stats (base values;
+        mutations roll at craft time), inputs have/need, Craft + Return."""
+        recipe = await Recipe.get_or_none(id=recipe_id).prefetch_related(
+            "result_weapon__category", "result_material"
+        )
+        if recipe is None:
+            await interaction.response.send_message(strings.CRAFT_NO_SUCH_RECIPE, ephemeral=True)
+            return
+        surface = recipe.skill.value if recipe.skill else "forge"
+        inputs, affordable = await self._recipe_costs(recipe, player)
+        craftable = affordable and await self._recipe_mastery_ok(recipe, player)
+
+        if recipe.result_weapon is not None:
+            actives = (
+                await WeaponActiveSkill.filter(
+                    weapon=recipe.result_weapon,
+                    active_skill__status=ContentStatus.ENABLED,
+                )
+                .order_by("tier")
+                .prefetch_related("active_skill")
+            )
+            passives = (
+                await WeaponPassiveSkill.filter(
+                    weapon=recipe.result_weapon,
+                    passive_skill__status=ContentStatus.ENABLED,
+                )
+                .order_by("tier")
+                .prefetch_related("passive_skill")
+            )
+            mastery = await WeaponMastery.get_or_none(
+                player=player, category_id=recipe.result_weapon.category_id
+            )
+            from maki.cogs.legion.constants import MUTATION_MAX, MUTATION_MIN
+
+            embed = render.recipe_detail_embed(
+                recipe, inputs, self.bot.color,
+                weapon=recipe.result_weapon,
+                actives=actives, passives=passives,
+                weapon_mastery=mastery.level if mastery else 0,
+                mutation_range=(MUTATION_MIN, MUTATION_MAX),
+            )
+        else:
+            embed = render.recipe_detail_embed(
+                recipe, inputs, self.bot.color, material=recipe.result_material
+            )
+        await self._edit_tracked(
+            interaction,
+            content=note,
+            embed=embed,
+            view=RecipeDetailView(
+                self, interaction.user.id, player, surface, recipe.id, craftable
+            ),
+        )
+
+    async def confirm_craft(
+        self, interaction: discord.Interaction, player: Player, recipe_id: int
+    ) -> None:
+        """The ephemeral are-you-sure predicate before crafting."""
+        recipe = await Recipe.get_or_none(id=recipe_id).prefetch_related(
+            "result_weapon", "result_material"
+        )
+        if recipe is None:
+            await interaction.response.send_message(strings.CRAFT_NO_SUCH_RECIPE, ephemeral=True)
+            return
+        item = (
+            recipe.result_weapon.name
+            if recipe.result_weapon
+            else recipe.result_material.name if recipe.result_material else recipe.name
+        )
+        confirm = CraftConfirmView(self, interaction.user.id, player, recipe_id)
+        await interaction.response.send_message(
+            strings.CRAFT_CONFIRM.format(item=item), view=confirm, ephemeral=True
+        )
+        confirm.message = await interaction.original_response()
+
+    async def do_craft(
+        self, interaction: discord.Interaction, player: Player, recipe_id: int
+    ) -> None:
+        """Perform the craft on the ephemeral confirm message: validate,
+        consume, then the crafting animation -- the dot count quietly
+        telegraphs the rolled quality -- and finally the detailed result."""
+        await self._defer(interaction)
+        if not await self.ensure_not_afk(interaction, player):
+            return
+        if not await self.ensure_alive(interaction, player):
+            return
+        recipe = await Recipe.get_or_none(id=recipe_id).prefetch_related(
+            "result_weapon__category", "result_material"
+        )
+        if recipe is None:
+            await self._edit_tracked(
+                interaction, content=strings.CRAFT_NOTHING, view=None
+            )
+            return
+        if not await self._recipe_mastery_ok(recipe, player):
+            await self._edit_tracked(
+                interaction,
+                content=strings.CRAFT_NEED_MASTERY.format(
+                    skill=strings.LIFE_SKILL_NAMES.get(
+                        recipe.skill.value, recipe.skill.value
+                    ),
+                    req=recipe.mastery_level_required,
+                ),
+                view=None,
+            )
+            return
+        costs = {
+            rm.material_id: rm.quantity
+            for rm in await RecipeMaterial.filter(recipe=recipe)
+        }
+        if not await self.inventory.consume(player, costs):
+            await self._edit_tracked(
+                interaction,
+                content=strings.CRAFT_SHORT_MATS.format(recipe=recipe.name),
+                view=None,
+            )
+            return
+
+        if recipe.result_weapon is not None:
+            legion_level = 0
+            if player.legion_id:
+                legion_level = (await player.legion).level
+            skill_ids = [
+                *(
+                    a.active_skill_id
+                    for a in await WeaponActiveSkill.filter(
+                        weapon=recipe.result_weapon
+                    )
+                ),
+                *(
+                    p.passive_skill_id
+                    for p in await WeaponPassiveSkill.filter(
+                        weapon=recipe.result_weapon
+                    )
+                ),
+            ]
+            mutations = roll_mutations(skill_ids, legion_level)
+            pw = await self.inventory.grant_weapon(
+                player, recipe.result_weapon, mutations=mutations
+            )
+            item = recipe.result_weapon.name
+            dots = strings.QUALITY_DOTS.get(pw.quality.value, 3)
+        else:
+            pw = None
+            item = recipe.result_material.name if recipe.result_material else recipe.name
+            dots = 3
+
+        # The show: crafting… with the quality-tell dot count.
+        await self._edit_tracked(
+            interaction,
+            content=strings.CRAFT_CRAFTING.format(item=item) + ".", view=None,
+        )
+        message = await interaction.original_response()
+        for i in range(2, dots + 1):
+            await asyncio.sleep(0.8)
+            await message.edit(
+                content=strings.CRAFT_CRAFTING.format(item=item) + "." * i
+            )
+        await asyncio.sleep(0.8)
+
+        if pw is not None:
+            pw = await PlayerWeapon.get(id=pw.id).prefetch_related("weapon__category")
+            actives = (
+                await WeaponActiveSkill.filter(
+                    weapon=pw.weapon, active_skill__status=ContentStatus.ENABLED
+                )
+                .order_by("tier")
+                .prefetch_related("active_skill")
+            )
+            passives = (
+                await WeaponPassiveSkill.filter(
+                    weapon=pw.weapon, passive_skill__status=ContentStatus.ENABLED
+                )
+                .order_by("tier")
+                .prefetch_related("passive_skill")
+            )
+            mastery = await WeaponMastery.get_or_none(
+                player=player, category_id=pw.weapon.category_id
+            )
+            await message.edit(
+                content=None,
+                embed=render.weapon_detail_embed(
+                    pw, actives, passives,
+                    mastery.level if mastery else 0,
+                    self.bot.color,
+                ),
+            )
+        else:
+            if recipe.result_material is not None:
+                await self.inventory.add_material(
+                    player, recipe.result_material, recipe.result_qty
+                )
+                if recipe.skill is not None:
+                    await self.masteries.grant_life(
+                        player, recipe.skill, CRAFT_MASTERY_PTS
+                    )
+                await message.edit(
+                    content=strings.CRAFT_MADE.format(
+                        qty=recipe.result_qty, material=recipe.result_material.name
+                    )
+                )
+            else:
+                await message.edit(content=strings.CRAFT_NOTHING)
+
+    # --- [p]settings (owner-only text command group) ------------------------------
+
+    @commands.group(name="set", hidden=True, invoke_without_command=True)
+    @commands.is_owner()
+    async def settings_group(self, ctx: commands.Context) -> None:
+        """Owner console. Subcommands: patch, seed, player, legion."""
+        await ctx.send(
+            "⚙️ owner console —\n"
+            "`set patch` · staged content updates\n"
+            "`set seed` · day-zero bootstrap\n"
+            "`set player <@user|id> <give|remove> <item_key> [qty]`\n"
+            "`set legion <guild_id> info` / "
+            "`set legion <guild_id> set <field> <value>`"
+        )
+
+    @settings_group.command(name="player")
+    @commands.is_owner()
+    async def settings_player(
+        self,
+        ctx: commands.Context,
+        user: discord.User,
+        action: str,
+        item_key: str,
+        qty: int = 1,
+    ) -> None:
+        """Give/remove items (materials or weapons, by content key)."""
+        action = action.lower()
+        if action not in ("give", "remove"):
+            await ctx.send("Action must be `give` or `remove`.")
+            return
+        player = await self.players.get(user.id)
+        if player is None:
+            await ctx.send("That user hasn't onboarded yet.")
+            return
+        qty = max(1, min(qty, 100))
+
+        material = await Material.get_or_none(key=item_key)
+        if material is not None:
+            if action == "give":
+                await self.inventory.add_material(player, material, qty)
+                await ctx.send(
+                    f"✅ {player.username} +{qty}× {material.name} (`{item_key}`)"
+                )
+            else:
+                if await self.inventory.consume(player, {material.id: qty}):
+                    await ctx.send(
+                        f"✅ {player.username} −{qty}× {material.name} (`{item_key}`)"
+                    )
+                else:
+                    await ctx.send(
+                        f"❌ {player.username} doesn't have {qty}× `{item_key}`."
+                    )
+            return
+
+        weapon = await Weapon.get_or_none(key=item_key)
+        if weapon is not None:
+            if action == "give":
+                for _ in range(min(qty, 10)):
+                    await self.inventory.grant_weapon(player, weapon)
+                await ctx.send(
+                    f"✅ {player.username} +{min(qty, 10)}× {weapon.name} "
+                    f"(`{item_key}`, flat)"
+                )
+            else:
+                pw = await PlayerWeapon.filter(
+                    player=player, weapon=weapon, equipped_slot__isnull=True
+                ).first()
+                if pw is None:
+                    await ctx.send(
+                        "❌ No unequipped instance to remove (unequip first)."
+                    )
+                else:
+                    await pw.delete()
+                    await ctx.send(
+                        f"✅ removed one {weapon.name} from {player.username}"
+                    )
+            return
+
+        await ctx.send(f"❌ No material or weapon with key `{item_key}`.")
+
+    _LEGION_SET_FIELDS = {
+        "level": int, "exp": int, "daily_kills": int, "channel_id": int,
+        "name": str,
+    }
+
+    @settings_group.command(name="legion")
+    @commands.is_owner()
+    async def settings_legion(
+        self,
+        ctx: commands.Context,
+        guild_id: int,
+        action: str,
+        field: str | None = None,
+        *,
+        value: str | None = None,
+    ) -> None:
+        """Inspect or tweak a legion row: info / set <field> <value>."""
+        legion = await self.legions.get(guild_id)
+        if legion is None:
+            await ctx.send("No legion with that guild id.")
+            return
+        action = action.lower()
+        if action == "info":
+            members = await Player.filter(legion=legion).count()
+            await ctx.send(
+                f"🏰 **{legion.name}** (guild {legion.guild_id})\n"
+                f"level {legion.level} · exp {legion.exp} · "
+                f"kills today {legion.daily_kills} · members {members} · "
+                f"channel {legion.channel_id or '*unset*'}"
+            )
+            return
+        if action != "set" or field is None or value is None:
+            await ctx.send("Usage: `settings legion <guild_id> set <field> <value>`")
+            return
+        caster = self._LEGION_SET_FIELDS.get(field)
+        if caster is None:
+            await ctx.send(
+                f"Settable fields: {', '.join(self._LEGION_SET_FIELDS)}"
+            )
+            return
+        try:
+            parsed = caster(value)
+        except ValueError:
+            await ctx.send(f"`{field}` needs a {caster.__name__}.")
+            return
+        if field == "name":
+            parsed = clean_legion_name(parsed)
+        setattr(legion, field, parsed)
+        await legion.save(update_fields=[field])
+        await ctx.send(f"✅ {legion.guild_id}: `{field}` → {parsed}")
+
+    @settings_group.command(name="patch")
+    @commands.is_owner()
+    async def settings_patch(self, ctx: commands.Context) -> None:
+        """Game patch status & staged updates."""
+        current = await self.patches.current()
+        live_counts = {
+            "materials": await Material.all().count(),
+            "categories": await WeaponCategory.all().count(),
+            "weapons": await Weapon.all().count(),
+            "skills": await ActiveSkill.all().count(),
+            "mobs": await Mob.all().count(),
+            "grounds": await HuntingGround.all().count(),
+            "recipes": await Recipe.all().count(),
+            "players": await Player.all().count(),
+        }
+        legion = await self.legions.get(ctx.guild.id) if ctx.guild else None
+        pending = await self.patches.pending()
+        self._pending_patch = pending
+        embed = render.patch_status_embed(
+            current, live_counts, PATCH["version"], content_hash(),
+            legion, self.bot.color,
+        )
+        if pending is not None:
+            embed.add_field(
+                name="Scheduled",
+                value=strings.PATCH_SCHEDULED.format(
+                    lock=int(pending.lock_at.timestamp()),
+                    apply=int(pending.apply_at.timestamp()),
+                ),
+                inline=False,
+            )
+        patch_view = PatchView(self, ctx.author.id, pending is not None)
+        patch_view.message = await ctx.send(embed=embed, view=patch_view)
+
+    async def patch_check(
+        self, interaction: discord.Interaction, view: PatchView
+    ) -> None:
+        current = await self.patches.current()
+        changed = current is None or current.hash != content_hash()
+        if not changed:
+            await interaction.response.send_message(
+                strings.PATCH_UP_TO_DATE, ephemeral=True
+            )
+            return
+        # Validate BEFORE offering the update -- broken references die at
+        # review time, never at apply time.
+        problems = validate_patch()
+        if problems:
+            shown = "\n".join(f"- {e}" for e in problems[:15])
+            if len(problems) > 15:
+                shown += f"\n… and {len(problems) - 15} more"
+            await interaction.response.send_message(
+                f"❌ The on-disk patch is invalid ({len(problems)} problems):\n"
+                f"```\n{shown}\n```",
+                ephemeral=True,
+            )
+            return
+        view.check.disabled = True
+        view.view_update.disabled = False
+        await self._edit_tracked(interaction, 
+            content=strings.PATCH_UPDATE_FOUND, view=view
+        )
+
+    async def patch_show_compare(self, interaction: discord.Interaction) -> None:
+        current = await self.patches.current()
+        embed = render.patch_compare_embed(
+            current.version if current else "—",
+            dict(current.summary) if current else {},
+            PATCH["version"],
+            PATCH.get("notes"),
+            content_summary(),
+            content_hash(),
+            self.bot.color,
+        )
+        # Review safety net: keys that vanished from content.py get tombstoned
+        # at apply -- an accidental key rename shows up right here.
+        removals = await pending_removals()
+        if removals:
+            lines = [
+                f"**{section}**: {', '.join(entries)}"
+                for section, entries in removals.items()
+            ]
+            embed.add_field(
+                name="⚠️ Will be REMOVED (tombstoned)",
+                value="\n".join(lines)[:1000],
+                inline=False,
+            )
+        await self._edit_tracked(interaction, 
+            content=None,
+            embed=embed,
+            view=PatchDecisionView(self, interaction.user.id),
+        )
+
+    async def patch_schedule(self, interaction: discord.Interaction) -> None:
+        lock_at, apply_at = patch_timeline(datetime.now().astimezone())
+        pending = await self.patches.schedule(
+            content_hash(), PATCH["version"], PATCH.get("notes"),
+            content_summary(), lock_at, apply_at,
+        )
+        if pending is None:
+            await interaction.response.send_message(
+                "A patch is already scheduled.", ephemeral=True
+            )
+            return
+        self._pending_patch = pending
+        self._start_patch_timer(pending)
+        await self._edit_tracked(interaction, 
+            content=strings.PATCH_SCHEDULED.format(
+                lock=int(lock_at.timestamp()), apply=int(apply_at.timestamp())
+            ),
+            embed=None,
+            view=None,
+        )
+
+    async def patch_cancel_scheduled(
+        self, interaction: discord.Interaction
+    ) -> None:
+        pending = await self.patches.pending()
+        if pending is not None:
+            await self.patches.cancel(pending)
+        if self._patch_task is not None:
+            self._patch_task.cancel()
+            self._patch_task = None
+        self._pending_patch = None
+        await self._edit_tracked(interaction, 
+            content=strings.PATCH_CANCELLED, embed=None, view=None
+        )
+
+    async def patch_apply_now(self, interaction: discord.Interaction) -> None:
+        """Force update: applies immediately (2-stage confirm already passed)."""
+        await interaction.response.defer(ephemeral=True)
+        pending = await self.patches.pending()
+        if pending is not None:
+            await self.patches.cancel(pending)
+        if self._patch_task is not None:
+            self._patch_task.cancel()
+            self._patch_task = None
+        self._pending_patch = None
+        created = await self._apply_and_record()
+        await interaction.followup.send(
+            strings.PATCH_APPLIED.format(
+                version=PATCH["version"], hash=content_hash(), created=created
+            ),
+            ephemeral=True,
+        )
+
+    async def _apply_and_record(self) -> int:
+        created = await apply_patch()
+        await self.patches.record_applied(
+            content_hash(), PATCH["version"], PATCH.get("notes"), content_summary()
+        )
+        log.info(
+            "Applied patch {} ({}) — {} new rows.",
+            PATCH["version"], content_hash(), created,
+        )
+        return created
+
+    def _start_patch_timer(self, pending: GamePatch) -> None:
+        async def timer() -> None:
+            delay = (
+                pending.apply_at - datetime.now().astimezone()
+            ).total_seconds()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            await apply_patch()
+            await self.patches.mark_applied(pending)
+            self._pending_patch = None
+            log.info("Scheduled patch {} applied.", pending.version)
+
+        if self._patch_task is not None:
+            self._patch_task.cancel()
+        self._patch_task = asyncio.create_task(timer())
+
+    @settings_group.command(name="seed")
+    @commands.is_owner()
+    async def settings_seed(self, ctx: commands.Context) -> None:
+        """Bootstrap: apply the current content patch directly (day zero)."""
+        created = await self._apply_and_record()
+        await ctx.send(
+            strings.PATCH_APPLIED.format(
+                version=PATCH["version"], hash=content_hash(), created=created
+            )
+        )
