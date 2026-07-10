@@ -1114,10 +1114,14 @@ class LegionCog(commands.Cog):
             await self._notify(interaction, strings.INVENTORY_CANNOT_DISMANTLE_EQUIPPED)
             return
         name = pw.weapon.name
+        returned = await self.inventory.dismantle_salvage(player, pw.weapon)
         await pw.delete()
+        note = strings.INVENTORY_DISMANTLED.format(weapon=name)
+        if returned:
+            mats = "、".join(f"{mat.name}×{qty}" for mat, qty in returned)
+            note += " " + strings.INVENTORY_DISMANTLE_RETURNED.format(mats=mats)
         await self.show_inventory_category(
-            interaction, player, KIND_WEAPONS,
-            note=strings.INVENTORY_DISMANTLED.format(weapon=name),
+            interaction, player, KIND_WEAPONS, note=note,
         )
 
     async def _use_consumable(

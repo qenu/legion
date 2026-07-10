@@ -115,6 +115,12 @@ MUTATION_MIN              = 75
 MUTATION_MAX              = 125
 MUTATION_LEGION_SHIFT     = 0.5
 MUTATION_LEGION_SHIFT_CAP = 10
+
+# Dismantle salvage: from the weapon's flattened crafting cost (1a + 2b ->
+# [a, b, b]), each success returns ONE random mat, then re-rolls -- so the
+# count is geometric/exponential (prob of returning k = (perc/100)^k). Random
+# draws without replacement, so returns never exceed the original cost.
+DISMANTLE_RETURN_PERC = 30
 QUALITY_TIER_THRESHOLDS = (  # (min average, tier value) checked in order
     (110, "masterwork"),
     (103, "fine"),

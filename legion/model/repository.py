@@ -32,6 +32,7 @@ from maki.cogs.legion.constants import (
     CONTRI_PER_MAT_RARITY,
     ContentStatus,
     CRAFT_SKILLS,
+    DISMANTLE_RETURN_PERC,
     MAX_ITEM_STACK,
     GATHER_SKILLS,
     MASTERY_SOFT_CAP,
@@ -60,6 +61,8 @@ from maki.cogs.legion.model.model import (
     PlayerActivity,
     PlayerMaterial,
     PlayerWeapon,
+    Recipe,
+    RecipeMaterial,
     Weapon,
     WeaponCategory,
     WeaponMastery,
@@ -385,6 +388,43 @@ class InventoryRepo:
             player_weapon.equipped_slot = slot
             await player_weapon.save(update_fields=["equipped_slot"])
             return slot
+
+    async def dismantle_salvage(
+        self, player: Player, weapon: Weapon, rng: random.Random | None = None
+    ) -> list[tuple[Material, int]]:
+        """Roll salvage for dismantling a weapon and grant it. Flattens the
+        forge recipe's cost into a mat pool (1a + 2b -> [a, b, b]); each success
+        (DISMANTLE_RETURN_PERC%) returns one random mat and re-rolls, so the
+        count is geometric and returns never exceed the original cost. Returns
+        the granted ``(material, qty)`` list (empty if no recipe or no luck)."""
+        rng = rng or random
+        recipe = await Recipe.filter(
+            result_weapon=weapon, skill__isnull=True, status=ContentStatus.ENABLED
+        ).first()
+        if recipe is None:  # starters and un-craftable weapons salvage nothing
+            return []
+        pool: list[Material] = []
+        for rm in await RecipeMaterial.filter(recipe=recipe).prefetch_related(
+            "material"
+        ):
+            pool += [rm.material] * rm.quantity
+        rng.shuffle(pool)
+
+        threshold = DISMANTLE_RETURN_PERC / 100
+        counts: dict[int, int] = {}
+        by_id: dict[int, Material] = {}
+        while pool and rng.random() < threshold:
+            mat = pool.pop()
+            counts[mat.id] = counts.get(mat.id, 0) + 1
+            by_id[mat.id] = mat
+        if not counts:
+            return []
+
+        result: list[tuple[Material, int]] = []
+        for mat_id, qty in counts.items():
+            await self.add_material(player, by_id[mat_id], qty)
+            result.append((by_id[mat_id], qty))
+        return result
 
 
 class ActivityRepo:
