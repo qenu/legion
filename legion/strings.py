@@ -109,7 +109,7 @@ COMBAT_LOG_FILENAME = "rounds.log"
 HUNTING_EXPEDITION_BUSY = (
     "你目前正在 **{ground}** 進行遠征，無法進行其他操作。"
 )
-HUNTING_EXPEDITION_BUSY_SHORT = "你目前正在進行遠征，無法進行其他操作。"
+HUNTING_EXPEDITION_BUSY_SHORT = "目前正在進行遠征，無法進行該操作。"
 HUNTING_PARTY = "參與者"
 HUNTING_PARTY_EMPTY = "目前沒有任何人參與遠征。"
 HUNTING_FAILED_INIT = "遠征失效"
