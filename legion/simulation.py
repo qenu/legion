@@ -25,10 +25,13 @@ from maki.cogs.legion.constants import (
     BLEED_DURATION,
     ContentStatus,
     DEATH_HP,
+    HP_AGGRO_WEIGHT,
     PLAYER_BASE_ATK,
     PLAYER_BASE_DEF,
     PLAYER_BASE_SPEED,
+    PLAYER_BASE_TAUNT,
     SIM_MAX_TICKS,
+    TAUNT_AGGRO_WEIGHT,
     EffectType,
     RequirementType,
     StatBonusType,
@@ -80,6 +83,7 @@ class Combatant:
     def_: int
     speed: int
 
+    taunt: int = 0  # aggro pull; only read for mob target weighting (players)
     skills: list[LoadedSkill] = field(default_factory=list)
     cooldowns: dict[int, int] = field(default_factory=dict)  # skill id -> ready at own-turn N
     turns_taken: int = 0
@@ -180,11 +184,13 @@ async def build_player_state(player: Player, legion_level: int = 0) -> PlayerSta
         PLAYER_BASE_DEF + get_def_bonus(legion_level),
         PLAYER_BASE_SPEED,
     )
+    taunt = PLAYER_BASE_TAUNT
     # Passive formulas evaluate against BASE stats (before any passive
     # applies) -- no ordering dependence, no self-compounding.
     base_stats = {
         "atk": atk, "attack": atk, "def": def_, "defense": def_,
         "speed": speed, "hp": player.health_points, "max_hp": max_hp,
+        "taunt": taunt,
     }
     skills: list[LoadedSkill] = []
 
@@ -241,6 +247,8 @@ async def build_player_state(player: Player, legion_level: int = 0) -> PlayerSta
                 def_ += value
             elif bonus.stat_bonus_type == StatBonusType.SPEED:
                 speed += value
+            elif bonus.stat_bonus_type == StatBonusType.TAUNT:
+                taunt += value
 
     return PlayerState(
         name=player.username,
@@ -249,6 +257,7 @@ async def build_player_state(player: Player, legion_level: int = 0) -> PlayerSta
         atk=atk,
         def_=def_,
         speed=speed,
+        taunt=taunt,
         skills=skills,
         player=player,
     )
@@ -323,6 +332,8 @@ def _apply_mob_passive(state: MobState, passive: MobPassive) -> None:
         state.def_ += value
     elif bonus.stat_bonus_type == StatBonusType.SPEED:
         state.speed += value
+    elif bonus.stat_bonus_type == StatBonusType.TAUNT:
+        state.taunt += value
 
 
 def _stats_of(c: Combatant) -> dict:
@@ -331,6 +342,7 @@ def _stats_of(c: Combatant) -> dict:
         "atk": c.atk, "attack": c.atk,
         "def": c.def_, "defense": c.def_,
         "speed": c.speed, "hp": c.current_hp, "max_hp": c.max_hp,
+        "taunt": c.taunt,
     }
 
 
@@ -461,6 +473,22 @@ def _player_act(
     ps.turns_taken += 1
 
 
+def _pick_target(
+    targets: list[PlayerState], rng: random.Random
+) -> PlayerState:
+    """Aggro-weighted target roll: pull = HP_AGGRO_WEIGHT * max_hp +
+    TAUNT_AGGRO_WEIGHT * taunt. Higher-HP and higher-taunt players are hit more
+    often; re-rolled every mob turn (no sticky focus-fire)."""
+    weights = [
+        max(
+            1.0,
+            HP_AGGRO_WEIGHT * t.max_hp + TAUNT_AGGRO_WEIGHT * t.taunt,
+        )
+        for t in targets
+    ]
+    return rng.choices(targets, weights=weights, k=1)[0]
+
+
 def _mob_act(
     mob: MobState, party: list[PlayerState],
     ctx: BattleContext, events: list[CombatEvent], rng: random.Random,
@@ -475,9 +503,11 @@ def _mob_act(
     ]
     if usable:
         loaded = rng.choice(usable)
-        _use_skill(mob, loaded, rng.choice(targets), [mob], ctx, events)
+        _use_skill(mob, loaded, _pick_target(targets, rng), [mob], ctx, events)
     else:
-        _deal_damage(mob, rng.choice(targets), mob.atk, ctx, events, kind="attack")
+        _deal_damage(
+            mob, _pick_target(targets, rng), mob.atk, ctx, events, kind="attack"
+        )
     mob.turns_taken += 1
     # The mob's action CLOSES the round (its events above are stamped with the
     # round in progress); the doom clock advances here. Player stuns are

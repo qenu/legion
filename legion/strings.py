@@ -346,6 +346,7 @@ SKILL_PASSIVE_DESCRIPTION = {
     "atk":        "攻擊力 +{value}",
     "def":        "防禦力 +{value}",
     "speed":      "速度 +{value}",
+    "taunt":      "嘲諷 +{value}",
 }
 SKILL_TIER_TAG = "T{tier}"
 SKILL_LOCKED_TAG = "🔒 需要{category}精通 Lv{req} 解鎖"

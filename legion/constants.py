@@ -62,7 +62,15 @@ BLEED_DURATION  = 3     # bleed deals effect_value once per ROUND, this many rou
 PLAYER_BASE_ATK   = 10
 PLAYER_BASE_DEF   = 5
 PLAYER_BASE_SPEED = 10
+PLAYER_BASE_TAUNT = 0  # aggro is opt-in: 0 base, raised only by TAUNT passives
 DEATH_HP = 0  # dead = 0 HP: no natural regen, no food, no active gameplay.
+
+# Mob target selection is WEIGHTED, not uniform: each living player's pull =
+# HP_AGGRO_WEIGHT * max_hp + TAUNT_AGGRO_WEIGHT * taunt. HP gives natural
+# tankiness (beefy players soak more); the TAUNT stat (from passives) is the
+# deliberate lever, scaled up so small passive values still matter vs raw HP.
+HP_AGGRO_WEIGHT    = 1.0
+TAUNT_AGGRO_WEIGHT = 10.0
 
 # Craft workstation embed paginates past this many recipe fields.
 CRAFT_SURFACE_PAGE_SIZE = 6
@@ -164,6 +172,7 @@ class StatBonusType(StrEnum):
     SPEED = "speed"
     DEF   = "def"
     HP    = "hp"
+    TAUNT = "taunt"  # aggro pull; weights mob target selection (not a combat stat)
 
 class RequirementType(StrEnum):
     HP_BELOW    = "hp_below"     # HP below a certain %

@@ -74,6 +74,7 @@ PATCH: dict = {
         {"key": "thick_hide", "name": "堅硬", "stat_bonus_type": "def", "stat_bonus_value": 4},
         {"key": "enrage", "name": "狂怒", "stat_bonus_type": "atk", "stat_bonus_value": 15},
         {"key": "haste", "name": "加速", "stat_bonus_type": "speed", "stat_bonus_value": 5},
+        {"key": "provoke", "name": "挑釁", "stat_bonus_type": "taunt", "stat_bonus_value": 6},
     ],
     "weapons": [
         {
