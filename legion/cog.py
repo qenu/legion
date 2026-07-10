@@ -1894,7 +1894,7 @@ class LegionCog(commands.Cog):
     @commands.is_owner()
     async def admin_group(self, ctx: commands.Context) -> None:
         """Owner console. Target = a @user/user-id (player) or guild-id (legion)."""
-        prefix = self.bot.get_prefix("")[-1]
+        prefix = (await self.bot.get_prefix(""))[-1]
         embed = discord.Embed(
             title="⚙️ Owner Console",
             description=(
