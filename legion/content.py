@@ -9,8 +9,8 @@ apply (rows are never hard-deleted; the /patch review shows removals).
 """
 
 PATCH: dict = {
-    "version": "0.1.10",
-    "notes": "Added new mobs, grounds, and recipes. Adjusted mob pools for existing grounds.",
+    "version": "0.1.11",
+    "notes": "- Added new materials, weapons, and mobs.",
     "materials": [
         {"key": "iron_ore", "name": "鐵礦石", "rarity": 1,
          "description": "帶著鏽色紋路的礦石，鍛造的基礎。"},
@@ -52,6 +52,13 @@ PATCH: dict = {
             "description": "仍在微微發燙的核心，蘊含古老的火焰力量。"},
         {"key": "dark_golem_core", "name": "黑石魔像核心", "rarity": 3,
             "description": "仍在微微發燙的核心，蘊含古老的黑暗力量。"},
+        {"key": "cobweb", "name": "蜘蛛網", "rarity": 1,
+            "description": "蜘蛛吐出的絲，黏黏的，能用來製作一些東西。"},
+        {"key": "spider_fang", "name": "蜘蛛牙", "rarity": 2,
+            "description": "鋒利的蜘蛛牙，帶有微弱的毒性。"},
+        {"key": "rabbit_porridge", "name": "兔肉粥", "kind": "food", "rarity": 2,
+         "stat_bonus_type": "hp", "stat_bonus_value": 5, "duration": 30,
+            "description": "神秘的兔肉粥，非常的黏稠美味。"}
     ],
     "categories": [
         {"key": "sword", "name": "刀劍"},
@@ -72,6 +79,7 @@ PATCH: dict = {
         {"key": "quake", "name": "震攝", "effect_type": "damage", "effect_value": "{atk} + 15", "cooldown": 3},
         {"key": "rock_throw", "name": "投擲碎石", "effect_type": "damage", "effect_value": "{atk} + 10", "cooldown": 2},
         {"key": "flame_throw", "name": "火焰噴射", "effect_type": "damage", "effect_value": "{atk} + 20", "cooldown": 4},
+        {"key": "poison_fang", "name": "毒牙", "effect_type": "poison", "effect_value": "{atk}*20%", "cooldown": 3},
     ],
     "passive_skills": [
         {"key": "grit", "name": "堅毅", "stat_bonus_type": "hp", "stat_bonus_value": 20},
@@ -81,6 +89,7 @@ PATCH: dict = {
         {"key": "enrage", "name": "狂怒", "stat_bonus_type": "atk", "stat_bonus_value": 15},
         {"key": "haste", "name": "加速", "stat_bonus_type": "speed", "stat_bonus_value": 5},
         {"key": "provoke", "name": "挑釁", "stat_bonus_type": "taunt", "stat_bonus_value": 6},
+        {"key": "exoskeletal", "name": "外骨骼", "stat_bonus_type": "def", "stat_bonus_value": 8},
     ],
     "weapons": [
         {
@@ -153,6 +162,12 @@ PATCH: dict = {
             "passives": [{"skill": "grit", "tier": 2, "req": 3},
                       {"skill": "focus", "tier": 2, "req": 3},
                       {"skill": "enrage", "tier": 1, "req": 5}],
+        },
+        {
+            "key": "sleeve_arrow", "name": "袖箭", "category": "bow",
+            "actives": [{"skill": "piercing_shot", "tier": 1, "req": 2}],
+            "passives": [{"skill": "fleetfoot", "tier": 1, "req": 3}],
+            "main_weapon": False,
         },
     ],
     "mobs": [
@@ -275,6 +290,18 @@ PATCH: dict = {
                 {"material": "iron_ore", "weight": 1, "min": 1, "max": 2},
                 {"material": "slime_goo", "weight": 2, "min": 1, "max": 2}]
         },
+        {
+            "key": "cave_spider", "name": "洞穴蜘蛛", "tier": 2, "rounds_limit": 6,
+            "hp": 70, "atk": 12, "def": 3, "speed": 10,
+            "skills": [
+                {"skill": "poison_fang", "cooldown": 1, "hp_threshold": 1.0}],
+            "passives": [
+                {"skill": "exoskeletal", "requirement_type": "hp_below","requirement_value": 0.5}
+            ],
+            "drops": [
+                {"material": "spider_fang", "weight": 1, "min": 1, "max": 2},
+                {"material": "cobweb", "weight": 3, "min": 1, "max": 2}]
+        },
     ],
     "grounds": [
         {"key": "verdant_meadow", "name": "翠綠草原", "danger": 1, "min_legion_level": 1,
@@ -294,7 +321,7 @@ PATCH: dict = {
          "pool": [{"mob": "grey_wolf", "weight": 2}, 
                   {"mob": "dire_wolf", "weight": 1}, 
                   {"mob": "flame_lizard", "weight": 2},
-                  {"mob": "flame_lizard", "weight": 1}]},
+                  {"mob": "giant_flame_lizard", "weight": 1}]},
         {"key": "sunken_quarry", "name": "沉沒採石場", "danger": 5, "min_legion_level": 4,
          "description": "這裡曾經是個繁榮的採石場，但現在已經荒廢了。",
          "pool": [{"mob": "rock_slime", "weight": 2}, 
@@ -376,6 +403,16 @@ PATCH: dict = {
                     {"material": "iron_ore", "qty": 5},
                     {"material": "rough_stone", "qty": 5},
                     {"material": "boar_hide", "qty": 1}]},
+        {"key": "forge_sleeve_arrow", "name": "袖箭",
+         "weapon": "sleeve_arrow",
+         "inputs": [{"material": "spider_fang", "qty": 2},
+                    {"material": "wolf_hide", "qty": 3},
+                    {"material": "iron_ore", "qty": 1}]},
+        {"key": "brew_rabbit_porridge", "name": "兔肉粥", "skill": "brew",
+         "material": "rabbit_porridge", "qty": 1, "req": 2,
+         "inputs": [{"material": "rabbit_foot", "qty": 1},
+                    {"material": "sunherb", "qty": 2},
+                    {"material": "cobweb", "qty": 1}]},
     ],
     "upgrade_costs": [
         {"level": 2, "material": "slime_goo", "base_qty": 5},
