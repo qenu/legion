@@ -26,7 +26,7 @@ PATCH: dict = {
          "description": "黏糊糊的，據說軍團的倉庫牆縫全靠它。"},
         {"key": "wolf_fang", "name": "狼牙", "rarity": 2,
          "description": "鋒利依舊，彷彿還帶著低沉的咆哮。"},
-        {"key": "wolf_hide", "name": "灰狼皮", "rarity": 2,
+        {"key": "wolf_hide", "name": "狼皮", "rarity": 2,
          "description": "厚實耐磨，是護具與握柄的好材料。"},
         {"key": "golem_core", "name": "魔像核心", "rarity": 3,
          "description": "仍在微微發燙的核心，蘊含古老的力量。"},
@@ -211,7 +211,9 @@ PATCH: dict = {
     "grounds": [
         {"key": "verdant_meadow", "name": "翠綠草原", "danger": 1, "min_legion_level": 1,
          "description": "一望無際的草原，高聳的草叢中隱藏著未知的危險。",
-         "pool": [{"mob": "slime", "weight": 3}, {"mob": "wild_boar", "weight": 2}, {"mob": "wild_rabbit", "weight": 3}]},
+         "pool": [
+             {"mob": "slime", "weight": 3}, 
+             {"mob": "wild_boar", "weight": 2}, {"mob": "wild_rabbit", "weight": 3}]},
         {"key": "whispering_forest", "name": "低語森林", "danger": 3, "min_legion_level": 2,
          "description": "樹木茂密的森林，彷彿傳來低語聲。",
          "pool": [{"mob": "wild_boar", "weight": 2}, {"mob": "grey_wolf", "weight": 3}, {"mob": "flame_lizard", "weight": 2}]},

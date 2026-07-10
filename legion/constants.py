@@ -15,6 +15,9 @@ MASTERY_PTS_WIN        = 2
 MASTERY_PTS_SURVIVED   = 2
 MASTERY_PTS_TOP_DAMAGE = 1  # competitive: highest damage_dealt (ties all win)
 MASTERY_PTS_TOP_TANK   = 1  # competitive: highest damage_taken (ties all win)
+# Off-hand (sub) weapon also earns mastery, but reduced: sub pts = main // this.
+# Granted BEFORE the main hand, so the zero-sum drain eats the sub first.
+SUB_WEAPON_MASTERY_DIVISOR = 4
 
 # Outsiders (player.legion != instance.legion): no material drops, mastery
 # pts divided (floored, min 1). Non-blocking, surfaced in the settlement log.

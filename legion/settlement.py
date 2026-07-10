@@ -22,6 +22,7 @@ from maki.cogs.legion.constants import (
     MASTERY_PTS_TOP_TANK,
     MASTERY_PTS_WIN,
     OUTSIDER_MASTERY_DIVISOR,
+    SUB_WEAPON_MASTERY_DIVISOR,
     DungeonStatus,
     WeaponSlot,
 )
@@ -62,6 +63,7 @@ class PlayerSettlement:
     top_damage: bool = False
     top_tank: bool = False
     grant: MasteryGrant | None = None      # None = no main weapon equipped
+    grant_sub: MasteryGrant | None = None  # None = no sub weapon equipped
     drops: list[tuple[Material, int]] = field(default_factory=list)
     daily_contri: int = 0                  # first fight of the day bonus
 
@@ -165,6 +167,18 @@ class SettlementService:
                 top_damage=player.id in top_damage,
                 top_tank=player.id in top_tank,
             )
+
+            # Sub hand earns reduced mastery and is granted FIRST, so when the
+            # main-hand grant trips the zero-sum drain, the freshly-topped sub
+            # is the earliest candidate to be eaten back down.
+            sub = await PlayerWeapon.get_or_none(
+                player=player, equipped_slot=WeaponSlot.SUB
+            ).prefetch_related("weapon__category")
+            sub_pts = pts // SUB_WEAPON_MASTERY_DIVISOR
+            if sub is not None and sub_pts > 0:
+                line.grant_sub = await self.masteries.grant_weapon(
+                    player, sub.weapon.category, sub_pts
+                )
 
             main = await PlayerWeapon.get_or_none(
                 player=player, equipped_slot=WeaponSlot.MAIN

@@ -210,19 +210,27 @@ def _settlement_field(line, result: SimulationResult) -> tuple[str, str, int]:
             pts=line.mastery_pts, category=gained_category
         )
     ]
+    # Off-hand mastery (reduced, granted before the main hand).
+    if line.grant_sub:
+        parts.append(
+            strings.SETTLE_MASTERY_SUB_LINE.format(
+                pts=line.grant_sub.pts, category=line.grant_sub.category
+            )
+        )
     if line.top_damage:
         parts.append(strings.SETTLE_TOP_DAMAGE)
     if line.top_tank:
         parts.append(strings.SETTLE_TOP_TANK)
-    if grant and grant.drained_pts:
-        drain = strings.SETTLE_DRAIN_LINE.format(
-            category=grant.drained_from, drained_pts=grant.drained_pts
-        )
-        if grant.levels_lost:
-            drain += strings.SETTLE_RELOCK_LINE.format(
-                category=grant.drained_from, levels=grant.levels_lost
+    for g in (line.grant, line.grant_sub):
+        if g and g.drained_pts:
+            drain = strings.SETTLE_DRAIN_LINE.format(
+                category=g.drained_from, drained_pts=g.drained_pts
             )
-        parts.append(drain)
+            if g.levels_lost:
+                drain += strings.SETTLE_RELOCK_LINE.format(
+                    category=g.drained_from, levels=g.levels_lost
+                )
+            parts.append(drain)
     if line.drops:
         parts.append(
             strings.SETTLE_DROP + ": " + ", ".join(f"{mat.name}{strings.TIMES_EMOJI}{qty}" for mat, qty in line.drops)
@@ -743,15 +751,24 @@ def members_embed(
     pages: int,
     color: discord.Colour,
 ) -> discord.Embed:
-    lines = [
-        f"{f'[{strings.MANAGER_TITLE}]' if p.is_legion_manager else ''}**{p.username}** — {p.contribution} {strings.LEGION_CONTRIBUTION}"
-        for p in entries
-    ]
     embed = discord.Embed(
         title=strings.LEGION_REFER + strings.MEMBERS_TITLE,
-        description="\n".join(lines) or strings.LEGION_REFER + strings.MEMBERS_TITLE + strings.DNE_TITLE,
         color=color,
     )
+    if entries:
+        # Two inline fields render as aligned columns -- names and contribution
+        # share the same row order, so line N of each matches the same player.
+        names = "\n".join(
+            f"{f'[{strings.MANAGER_TITLE}] ' if p.is_legion_manager else ''}{p.username}"
+            for p in entries
+        )
+        values = "\n".join(str(p.contribution) for p in entries)
+        embed.add_field(name=strings.MEMBERS_NAME_COL, value=names, inline=True)
+        embed.add_field(name=strings.LEGION_CONTRIBUTION, value=values, inline=True)
+    else:
+        embed.description = (
+            strings.LEGION_REFER + strings.MEMBERS_TITLE + strings.DNE_TITLE
+        )
     embed.set_footer(text=strings.PAGE_NUM_TITLE.format(page=page + 1, pages=max(1, pages)))
     return embed
 

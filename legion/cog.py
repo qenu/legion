@@ -96,6 +96,7 @@ from maki.cogs.legion.views import (
     CraftConfirmView,
     CraftHomeView,
     CraftSurfaceView,
+    DismantleConfirmView,
     RecipeDetailView,
     KIND_CONSUMABLES,
     KIND_WEAPONS,
@@ -1117,16 +1118,44 @@ class LegionCog(commands.Cog):
         player: Player,
         selection: str | None,
     ) -> None:
+        """The ephemeral are-you-sure predicate before dismantling (destructive
+        and irreversible -- salvage is a chance, not a refund)."""
         if selection is None or not selection.startswith("w:"):
             await self._notify(interaction, strings.INVENTORY_DISMANTLE_WEAPON_ONLY)
             return
-        await self._defer(interaction)
-        pw = await PlayerWeapon.get_or_none(id=int(selection.partition(":")[2])).prefetch_related("weapon")
+        pw_id = int(selection.partition(":")[2])
+        pw = await PlayerWeapon.get_or_none(id=pw_id).prefetch_related("weapon")
         if pw is None or pw.player_id != player.id:
             await self._notify(interaction, strings.INVENTORY_CANNOT_DISMANTLE)
             return
         if pw.equipped_slot is not None:
             await self._notify(interaction, strings.INVENTORY_CANNOT_DISMANTLE_EQUIPPED)
+            return
+        confirm = DismantleConfirmView(self, interaction.user.id, player, pw_id)
+        await interaction.response.send_message(
+            strings.INVENTORY_DISMANTLE_CONFIRM.format(weapon=pw.weapon.name),
+            view=confirm, ephemeral=True,
+        )
+        confirm.message = await interaction.original_response()
+
+    async def do_dismantle(
+        self, interaction: discord.Interaction, player: Player, pw_id: int
+    ) -> None:
+        """Perform the dismantle on the ephemeral confirm message: re-validate
+        (the weapon may have been equipped/dismantled since), salvage, destroy."""
+        await self._defer(interaction)
+        pw = await PlayerWeapon.get_or_none(id=pw_id).prefetch_related("weapon")
+        if pw is None or pw.player_id != player.id:
+            await self._edit_tracked(
+                interaction, content=strings.INVENTORY_CANNOT_DISMANTLE,
+                embed=None, view=None,
+            )
+            return
+        if pw.equipped_slot is not None:
+            await self._edit_tracked(
+                interaction, content=strings.INVENTORY_CANNOT_DISMANTLE_EQUIPPED,
+                embed=None, view=None,
+            )
             return
         name = pw.weapon.name
         returned = await self.inventory.dismantle_salvage(player, pw.weapon)
@@ -1135,9 +1164,10 @@ class LegionCog(commands.Cog):
         if returned:
             mats = "、".join(f"{mat.name}×{qty}" for mat, qty in returned)
             note += " " + strings.INVENTORY_DISMANTLE_RETURNED.format(mats=mats)
-        await self.show_inventory_category(
-            interaction, player, KIND_WEAPONS, note=note,
-        )
+        # Refresh the weapons embed WITHOUT the note, then deliver the outcome
+        # as its own ephemeral message rather than as content on the embed.
+        await self.show_inventory_category(interaction, player, KIND_WEAPONS)
+        await interaction.followup.send(note, ephemeral=True)
 
     async def _use_consumable(
         self, player: Player, material_id: int, target: Player | None = None

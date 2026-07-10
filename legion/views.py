@@ -1184,3 +1184,28 @@ class CraftConfirmView(_AuthorOnly):
             content=CRAFT_CANCELLED, embed=None, view=None
         )
 
+
+class DismantleConfirmView(_AuthorOnly):
+    """The ephemeral are-you-sure before dismantling. Yes destroys the weapon
+    (rolling salvage); Cancel closes."""
+
+    def __init__(self, cog: "LegionCog", author_id: int, player: Player, pw_id: int):
+        super().__init__(author_id=author_id, timeout=60)
+        self.cog = cog
+        self.player = player
+        self.pw_id = pw_id
+
+    @discord.ui.button(label=CONFIRM_TITLE, style=discord.ButtonStyle.danger)
+    async def yes(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self.cog.do_dismantle(interaction, self.player, self.pw_id)
+
+    @discord.ui.button(label=CANCEL_TITLE, style=discord.ButtonStyle.secondary)
+    async def cancel(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await interaction.response.edit_message(
+            content=INVENTORY_DISMANTLE_CANCELLED, embed=None, view=None
+        )
+
