@@ -645,7 +645,9 @@ class LegionCog(commands.Cog):
         embed = render.legion_embed(
             legion, member_count, active_count, sheet, self.bot.color
         )
-        view = LegionView(self, interaction.user.id, legion, is_officer)
+        view = LegionView(
+            self, interaction.user.id, legion, is_officer, maxed=not sheet
+        )
         if edit:
             await self._edit_tracked(interaction, embed=embed, view=view)
         else:
@@ -668,6 +670,11 @@ class LegionCog(commands.Cog):
         if not await self._is_officer(interaction, legion):
             await interaction.response.send_message(
                 strings.LEGION_OFFICERS_ONLY, ephemeral=True
+            )
+            return
+        if not await self.legions.upgrade_sheet(legion):  # no next-level cost
+            await interaction.response.send_message(
+                strings.LEGION_UPGRADE_MAXED, ephemeral=True
             )
             return
         if await self.legions.upgrade(legion):
@@ -1162,7 +1169,7 @@ class LegionCog(commands.Cog):
         await pw.delete()
         note = strings.INVENTORY_DISMANTLED.format(weapon=name)
         if returned:
-            mats = "、".join(f"{mat.name}×{qty}" for mat, qty in returned)
+            mats = "、".join(f"{mat.name}×{qty:,}" for mat, qty in returned)
             note += " " + strings.INVENTORY_DISMANTLE_RETURNED.format(mats=mats)
         # Refresh the weapons embed WITHOUT the note, then deliver the outcome
         # as its own ephemeral message rather than as content on the embed.
@@ -1422,7 +1429,7 @@ class LegionCog(commands.Cog):
                 value = f"{render.progress_bar(100)}\n-# {strings.MAX_EMOJI}"
             else:
                 need = mastery_level_cost(mastery.level + 1)
-                value = f"{render.progress_bar(mastery.exp / max(1, need) * 100)}\n-# {mastery.exp}/{need}"
+                value = f"{render.progress_bar(mastery.exp / max(1, need) * 100)}\n-# {mastery.exp:,}/{need:,}"
             embed.add_field(
                 name=strings.MASTERY_SUMMARY.format(
                     category=mastery.category.name, level=mastery.level
@@ -1538,7 +1545,7 @@ class LegionCog(commands.Cog):
         loot_parts = []
         for material_id, qty in rolled.items():
             await self.inventory.add_material(player, materials[material_id], qty)
-            loot_parts.append(f"{materials[material_id].name}×{qty}")
+            loot_parts.append(f"{materials[material_id].name}×{qty:,}")
         if pts:
             await self.masteries.grant_life(player, activity.skill, pts)
 
@@ -1613,14 +1620,24 @@ class LegionCog(commands.Cog):
         note: str | None = None,
     ) -> None:
         groups, _ = await self._craft_groups(player)
+        # Forge select is filtered to recipes the player holds at least one of
+        # the required materials for; the embed still lists them all.
+        owned = set(
+            await PlayerMaterial.filter(
+                player=player, quantity__gt=0
+            ).values_list("material_id", flat=True)
+        )
         entries = []
+        craftable = []
         for recipe, unlocked in groups.get(surface, []):
             inputs = await RecipeMaterial.filter(recipe=recipe).prefetch_related(
                 "material"
             )
             text = ", ".join(strings.CRAFT_MAT_DETAIL.format(name=i.material.name, count=i.quantity) for i in inputs)
             entries.append((recipe, unlocked, text))
-        craftable = [r for r, unlocked, _ in entries if unlocked]
+            has_material = any(i.material_id in owned for i in inputs)
+            if unlocked and (surface != "forge" or has_material):
+                craftable.append(recipe)
         embeds = render.craft_surface_embed(surface, entries, self.bot.color)
         await self._edit_tracked(interaction,
             content=note,

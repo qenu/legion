@@ -423,12 +423,13 @@ def _use_skill(
         target = min((a for a in allies if a.alive), key=lambda a: a.hp_ratio)
         healed = min(value, target.max_hp - target.current_hp)
         target.current_hp += healed
-        if actor is target:
-            target.name = MYSELF_TITLE  # self refer to avoid "Alice heals Alice" in the log
+        # Relabel only THIS event's target (avoid "Alice heals Alice"); never
+        # mutate the combatant's name -- that would stick for all later events.
+        target_name = MYSELF_TITLE if actor is target else target.name
         events.append(
             CombatEvent(
                 tick=ctx.tick, round=ctx.round + 1, actor=actor.name, kind="heal",
-                target=target.name, value=healed, detail=skill.name,
+                target=target_name, value=healed, detail=skill.name,
             )
         )
     elif skill.effect_type == EffectType.STUN:

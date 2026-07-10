@@ -292,6 +292,8 @@ class LegionRepo:
             if locked is None or not upgrade_ready(locked.level, locked.exp):
                 return False
             sheet = await self.upgrade_sheet(locked)
+            if not sheet:  # no cost defined for the next level: content ceiling
+                return False
             if any(have < need for _, need, have in sheet):
                 return False
 

@@ -48,6 +48,10 @@ PATCH: dict = {
         {"key": "spring_roll", "name": "春捲", "kind": "food", "rarity": 2,
          "stat_bonus_type": "speed", "stat_bonus_value": 2, "duration": 30,
          "description": "半透明的外皮，裡面包著各種蔬菜，吃起來清爽。"},
+        {"key": "flame_lizard_core", "name": "火蜥蜴核心", "rarity": 3,
+            "description": "仍在微微發燙的核心，蘊含古老的火焰力量。"},
+        {"key": "dark_golem_core", "name": "黑石魔像核心", "rarity": 3,
+            "description": "仍在微微發燙的核心，蘊含古老的黑暗力量。"},
     ],
     "categories": [
         {"key": "sword", "name": "刀劍"},
@@ -66,6 +70,8 @@ PATCH: dict = {
         {"key": "smash", "name": "粉碎", "effect_type": "damage", "effect_value": "{atk} + 8", "cooldown": 2},
         {"key": "rending_howl", "name": "撕裂咆哮", "effect_type": "bleed", "effect_value": "{atk}*30%", "cooldown": 3},
         {"key": "quake", "name": "震攝", "effect_type": "damage", "effect_value": "{atk} + 15", "cooldown": 3},
+        {"key": "rock_throw", "name": "投擲碎石", "effect_type": "damage", "effect_value": "{atk} + 10", "cooldown": 2},
+        {"key": "flame_throw", "name": "火焰噴射", "effect_type": "damage", "effect_value": "{atk} + 20", "cooldown": 4},
     ],
     "passive_skills": [
         {"key": "grit", "name": "堅毅", "stat_bonus_type": "hp", "stat_bonus_value": 20},
@@ -109,9 +115,9 @@ PATCH: dict = {
         },  
         {
             "key": "golem_staff", "name": "魔像法杖", "category": "staff",
-            "actives": [{"skill": "spark", "tier": 2, "req": 3},
+            "actives": [{"skill": "rock_throw", "tier": 2, "req": 3},
                       {"skill": "mend", "tier": 2, "req": 3},
-                      {"skill": "quake", "tier": 1, "req": 5}],
+                      {"skill": "quake", "tier": 2, "req": 4}],
             "passives": [{"skill": "focus", "tier": 2, "req": 3},]
         },
         {
@@ -131,7 +137,23 @@ PATCH: dict = {
             "key": "blessed_gloves", "name": "祝福手套", "category": "staff",
             "actives": [{"skill": "mend", "tier": 1, "req": 2}],
             "passives": [{"skill": "focus", "tier": 1, "req": 2}],
-        }
+            "main_weapon": False,
+        },
+        {
+            "key": "flame_lizard_staff", "name": "火蜥蜴法杖", "category": "staff",
+            "actives": [{"skill": "spark", "tier": 3, "req": 2},
+                      {"skill": "flame_throw", "tier": 2, "req": 4}],
+            "passives": [{"skill": "focus", "tier": 2, "req": 3}],
+        },
+        {
+            "key": "dark_stone_sword", "name": "黑石巨劍", "category": "sword",
+            "actives": [{"skill": "slash", "tier": 3, "req": 2},
+                      {"skill": "cleave", "tier": 3, "req": 4},
+                      {"skill": "smash", "tier": 2, "req": 5}],
+            "passives": [{"skill": "grit", "tier": 2, "req": 3},
+                      {"skill": "focus", "tier": 2, "req": 3},
+                      {"skill": "enrage", "tier": 1, "req": 5}],
+        },
     ],
     "mobs": [
         {
@@ -196,16 +218,62 @@ PATCH: dict = {
                 {"material": "molt_skin", "weight": 2, "min": 1, "max": 2}]
         },
         {
+            "key": "giant_flame_lizard", "name": "巨型火蜥蜴", "tier": 2, "rounds_limit": 7,
+            "hp": 150, "atk": 20, "def": 6, "speed": 8,
+            "skills": [
+                {"skill": "flame_throw", "cooldown": 1, "hp_threshold": 1.0},
+                {"skill": "dazing_blow", "cooldown": 2, "hp_threshold": 0.5}],
+            "passives": [],
+            "drops": [
+                {"material": "lizard_tail", "weight": 3, "min": 1, "max": 3},
+                {"material": "molt_skin", "weight": 3, "min": 1, "max": 3},
+                {"material": "flame_lizard_core", "weight": 2, "min": 1, "max": 2}]
+        },
+        {
+            "key": "flower_slime", "name": "花朵史萊姆", "tier": 2, "rounds_limit": 7,
+            "hp": 70, "atk": 12, "def": 3, "speed": 9,
+            "skills": [
+                {"skill": "mend", "cooldown": 1, "hp_threshold": 0.5}],
+            "passives": [],
+            "drops": [
+                {"material": "slime_goo", "weight": 3, "min": 1, "max": 2},
+                {"material": "sunherb", "weight": 2, "min": 1, "max": 2}]
+        },
+        {
             "key": "stone_golem", "name": "石像巨人", "tier": 3, "rounds_limit": 6,
             "hp": 250, "atk": 15, "def": 15, "speed": 3,
             "skills": [
                 {"skill": "quake", "cooldown": 3, "hp_threshold": 0.7}],
             "passives": [
-                {"skill": "thick_hide"}],
+                {"skill": "thick_hide", "requirement_type": "hp_below","requirement_value": 0.8}],
             "drops": [
                 {"material": "golem_core", "weight": 1, "min": 1, "max": 1},
                 {"material": "rough_stone", "weight": 3, "min": 2, "max": 4},
                 {"material": "iron_ore", "weight": 2, "min": 1, "max": 2}]
+        },
+        {
+            "key": "dark_stone_golem", "name": "黑石巨人", "tier": 3, "rounds_limit": 6,
+            "hp": 300, "atk": 20, "def": 20, "speed": 4,
+            "skills": [
+                {"skill": "quake", "cooldown": 3, "hp_threshold": 0.7},
+                {"skill": "rock_throw", "cooldown": 2, "hp_threshold": 1.0}],
+            "passives": [
+                {"skill": "thick_hide", "requirement_type": "hp_below","requirement_value": 0.8},
+                {"skill": "provoke", "requirement_type": "hp_below","requirement_value": 0.5}],
+            "drops": [
+                {"material": "dark_golem_core", "weight": 1, "min": 1, "max": 1},
+                {"material": "rough_stone", "weight": 3, "min": 2, "max": 4},
+                {"material": "iron_ore", "weight": 2, "min": 1, "max": 2}]
+        },
+        {
+            "key": "rock_slime", "name": "碎石史萊姆", "tier": 2, "rounds_limit": 5,
+            "hp": 80, "atk": 10, "def": 5, "speed": 8,
+            "skills": [
+                {"skill": "rock_throw", "cooldown": 2, "hp_threshold": 1.0}],
+            "passives": [],
+            "drops": [
+                {"material": "iron_core", "weight": 1, "min": 1, "max": 2},
+                {"material": "slime_goo", "weight": 2, "min": 1, "max": 2}]
         },
     ],
     "grounds": [
@@ -213,13 +281,26 @@ PATCH: dict = {
          "description": "一望無際的草原，高聳的草叢中隱藏著未知的危險。",
          "pool": [
              {"mob": "slime", "weight": 3}, 
-             {"mob": "wild_boar", "weight": 2}, {"mob": "wild_rabbit", "weight": 3}]},
+             {"mob": "wild_boar", "weight": 2}, 
+             {"mob": "wild_rabbit", "weight": 3}]},
         {"key": "whispering_forest", "name": "低語森林", "danger": 3, "min_legion_level": 2,
          "description": "樹木茂密的森林，彷彿傳來低語聲。",
-         "pool": [{"mob": "wild_boar", "weight": 2}, {"mob": "grey_wolf", "weight": 3}, {"mob": "flame_lizard", "weight": 2}]},
+         "pool": [{"mob": "wild_boar", "weight": 2}, 
+                  {"mob": "grey_wolf", "weight": 3}, 
+                  {"mob": "flame_lizard", "weight": 2},
+                  {"mob": "flower_slime", "weight": 2}]},
+        {"key": "mountain_pass", "name": "山脊小徑", "danger": 4, "min_legion_level": 3,
+         "description": "崎嶇的山脊小徑，風聲呼嘯而過，隱藏著危險的生物。",
+         "pool": [{"mob": "grey_wolf", "weight": 2}, 
+                  {"mob": "dire_wolf", "weight": 1}, 
+                  {"mob": "flame_lizard", "weight": 2},
+                  {"mob": "flame_lizard", "weight": 1}]},
         {"key": "sunken_quarry", "name": "沉沒採石場", "danger": 5, "min_legion_level": 4,
          "description": "這裡曾經是個繁榮的採石場，但現在已經荒廢了。",
-         "pool": [{"mob": "grey_wolf", "weight": 2}, {"mob": "dire_wolf", "weight": 3}, {"mob": "stone_golem", "weight": 3}]},
+         "pool": [{"mob": "rock_slime", "weight": 2}, 
+                  {"mob": "dire_wolf", "weight": 1}, 
+                  {"mob": "stone_golem", "weight": 3},
+                  {"mob": "dark_stone_golem", "weight": 1}]},
     ],
     "sites": [
         {"key": "old_mines", "name": "舊礦坑", "skill": "mine", "min_legion_level": 1,
@@ -283,6 +364,18 @@ PATCH: dict = {
          "material": "healing_potion", "qty": 1, "req": 0,
          "inputs": [{"material": "duskberry", "qty": 5},
                     {"material": "slime_goo", "qty": 10}]},
+        {"key": "forge_flame_lizard_staff", "name": "火蜥蜴法杖",
+         "weapon": "flame_lizard_staff",
+         "inputs": [{"material": "flame_lizard_core", "qty": 2},
+                    {"material": "wolf_fang", "qty": 5},
+                    {"material": "rabbit_foot", "qty": 2},
+                    {"material": "iron_ore", "qty": 3}]},
+        {"key": "forge_dark_stone_sword", "name": "黑石巨劍",
+         "weapon": "dark_stone_sword",
+         "inputs": [{"material": "dark_golem_core", "qty": 2},
+                    {"material": "iron_ore", "qty": 5},
+                    {"material": "rough_stone", "qty": 5},
+                    {"material": "boar_hide", "qty": 1}]},
     ],
     "upgrade_costs": [
         {"level": 2, "material": "slime_goo", "base_qty": 5},
@@ -290,8 +383,8 @@ PATCH: dict = {
         {"level": 3, "material": "wolf_fang", "base_qty": 5},
         {"level": 3, "material": "rough_stone", "base_qty": 10},
         {"level": 3, "material": "rabbit_foot", "base_qty": 3},
-        {"level": 4, "material": "golem_core", "base_qty": 2},
-        {"level": 4, "material": "wolf_hide", "base_qty": 5},
-        {"level": 4, "material": "iron_ore", "base_qty": 10},
+        {"level": 4, "material": "dark_golem_core", "base_qty": 5},
+        {"level": 4, "material": "flame_lizard_core", "base_qty": 2},
+        {"level": 4, "material": "golem_core", "base_qty": 10},
     ],
 }

@@ -247,7 +247,7 @@ def _settlement_field(line, result: SimulationResult) -> tuple[str, str, int]:
     sort_key = 0
     if ps is not None:
         sort_key = ps.damage_dealt + ps.damage_taken
-        header += strings.SKULL_EMOJI if not ps.alive else f" ({ps.current_hp}/{ps.max_hp} {strings.HEALTHPOINT_TITLE_SHORT})"
+        header += strings.SKULL_EMOJI if not ps.alive else f" ({ps.current_hp:,}/{ps.max_hp:,} {strings.HEALTHPOINT_TITLE_SHORT})"
         parts.insert(
             0, (
                 f"{strings.SETTLE_DAMAGE_DEALT}: {ps.damage_dealt:,}\n"
@@ -282,7 +282,7 @@ def settlement_embeds(
 
     note = ""
     if report.legion_exp:
-        note = f"{strings.LEGION_REFER}{strings.EXPERIENCE_UNIT} +{report.legion_exp} {strings.EXPERIENCE_UNIT_SHORTER}"
+        note = f"{strings.LEGION_REFER}{strings.EXPERIENCE_UNIT} +{report.legion_exp:,} {strings.EXPERIENCE_UNIT_SHORTER}"
         if report.upgrade_ready:
             note += "\n" + strings.LEGION_UPGRADE_READY_SHORT
 
@@ -359,7 +359,7 @@ def profile_embed(
         name=strings.HEALTHPOINT_TITLE,
         value=(
             f"{progress_bar(player.health_points / max(1, max_hp) * 100)}\n"
-            f"-# {player.health_points}/{max_hp}"
+            f"-# {player.health_points:,}/{max_hp:,}"
         ),
         inline=False,
     )
@@ -367,7 +367,7 @@ def profile_embed(
         name=strings.BELONGS_TO_TITLE + strings.LEGION_REFER, 
         value=(
             (legion.name if legion else strings.LEGION_DNE) + 
-            f"\n-# {strings.LEGION_CONTRIBUTION}: {player.contribution}"
+            f"\n-# {strings.LEGION_CONTRIBUTION}: {player.contribution:,}"
         ),
         inline=False
     )
@@ -394,7 +394,7 @@ def _mastery_field(name: str, level: int, exp: int) -> tuple[str, str]:
         value = f"{progress_bar(100)}\n-# {strings.MAX_EMOJI}"
     else:
         need = mastery_level_cost(level + 1)
-        value = f"{progress_bar(exp / max(1, need) * 100)}\n-# {exp}/{need}"
+        value = f"{progress_bar(exp / max(1, need) * 100)}\n-# {exp:,}/{need:,}"
     return field_name, value
 
 
@@ -440,7 +440,7 @@ def inventory_home_embed(
     """Layer 1: every material stack + only the EQUIPPED weapons."""
     embed = discord.Embed(title=strings.INVENTORY_TITLE, color=color)
     mat_lines = [
-        f"**{s.material.name}**{strings.TIMES_EMOJI}{s.quantity}"
+        f"**{s.material.name}**{strings.TIMES_EMOJI}{s.quantity:,}"
         for s in stacks
         if s.quantity > 0
     ]
@@ -539,7 +539,7 @@ def recipe_detail_embed(
         for mount in actives:
             skill = mount.active_skill
             text = strings.SKILL_ACTIVE_DESCRIPTION.get(
-                skill.effect_type.value, "{value}"
+                skill.effect_type.value, "{value:,}"
             ).format(value=_formula_value(skill.effect_value, mount.tier))
             text += strings.SKILL_COOLDOWN_DESCRIPTION.format(value=skill.cooldown)
             tier = strings.SKILL_TIER_TAG.format(tier=mount.tier)
@@ -557,7 +557,7 @@ def recipe_detail_embed(
         for mount in passives:
             skill = mount.passive_skill
             text = strings.SKILL_PASSIVE_DESCRIPTION.get(
-                skill.stat_bonus_type.value, "{value}"
+                skill.stat_bonus_type.value, "{value:,}"
             ).format(value=_formula_value(skill.stat_bonus_value, mount.tier))
             tier = strings.SKILL_TIER_TAG.format(tier=mount.tier)
             passive_lines.append(
@@ -632,7 +632,7 @@ def weapon_detail_embed(
             skill.effect_value, mount.tier, muts.get(str(mount.active_skill_id))
         )
         text = strings.SKILL_ACTIVE_DESCRIPTION.get(
-            skill.effect_type.value, "{value}"
+            skill.effect_type.value, "{value:,}"
         ).format(value=value)
         text += strings.SKILL_COOLDOWN_DESCRIPTION.format(value=skill.cooldown)
         tier = strings.SKILL_TIER_TAG.format(tier=mount.tier)
@@ -652,7 +652,7 @@ def weapon_detail_embed(
             skill.stat_bonus_value, mount.tier, muts.get(str(mount.passive_skill_id))
         )
         text = strings.SKILL_PASSIVE_DESCRIPTION.get(
-            skill.stat_bonus_type.value, "{value}"
+            skill.stat_bonus_type.value, "{value:,}"
         ).format(value=value)
         tier = strings.SKILL_TIER_TAG.format(tier=mount.tier)
         passive_lines.append(
@@ -719,16 +719,16 @@ def legion_embed(
     embed.add_field(name=strings.LEVEL_UNIT, value=str(legion.level))
     embed.add_field(
         name=strings.EXPERIENCE_UNIT, 
-        value=f"{progress_bar(legion.exp / max(1, next_cost) * 100)}\n-# {legion.exp}/{next_cost}", 
+        value=f"{progress_bar(legion.exp / max(1, next_cost) * 100)}\n-# {legion.exp:,}/{next_cost:,}", 
         inline=False)
     embed.add_field(
         name=strings.MEMBERS_TITLE,
-        value=f"{member_count}",
+        value=f"{member_count:,}",
     )
     embed.add_field(name=strings.LEGION_KILLS_COUNT, value=str(legion.daily_kills))
     if sheet:
         lines = [
-            f"{strings.CHECK_EMOJI if have >= need else strings.CROSS_EMOJI} {mat.name}: {have}/{need}"
+            f"{strings.CHECK_EMOJI if have >= need else strings.CROSS_EMOJI} {mat.name}: {have:,}/{need:,}"
             for mat, need, have in sheet
         ]
         embed.add_field(
@@ -762,7 +762,7 @@ def members_embed(
             f"{f'[{strings.MANAGER_TITLE}] ' if p.is_legion_manager else ''}{p.username}"
             for p in entries
         )
-        values = "\n".join(str(p.contribution) for p in entries)
+        values = "\n".join(f"{p.contribution:,}" for p in entries)
         embed.add_field(name=strings.MEMBERS_NAME_COL, value=names, inline=True)
         embed.add_field(name=strings.LEGION_CONTRIBUTION, value=values, inline=True)
     else:
@@ -788,7 +788,7 @@ def donate_embed(
     )
     lines = []
     for s in stacks:
-        line = f"**{s.material.name}** {strings.TIMES_EMOJI}{s.quantity}"
+        line = f"**{s.material.name}** {strings.TIMES_EMOJI}{s.quantity:,}"
         if s.material_id in sheet_map:
             need, have = sheet_map[s.material_id]
             line += f" — {strings.DONATE_NEEDED_TAG.format(have=have, need=need)}"

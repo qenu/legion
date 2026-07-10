@@ -334,6 +334,7 @@ class LegionView(_AuthorOnly):
         author_id: int,
         legion: Legion,
         is_officer: bool,
+        maxed: bool = False,
     ):
         super().__init__(author_id=author_id)
         self.cog = cog
@@ -341,6 +342,8 @@ class LegionView(_AuthorOnly):
         if not is_officer:
             self.upgrade.disabled = True
             self.settings.disabled = True
+        if maxed:  # no next-level cost defined: nothing left to upgrade into
+            self.upgrade.disabled = True
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         # Upgrade is perm-gated, not author-gated: anyone with officer rights
