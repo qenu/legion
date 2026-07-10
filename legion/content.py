@@ -272,7 +272,7 @@ PATCH: dict = {
                 {"skill": "rock_throw", "cooldown": 2, "hp_threshold": 1.0}],
             "passives": [],
             "drops": [
-                {"material": "iron_core", "weight": 1, "min": 1, "max": 2},
+                {"material": "iron_ore", "weight": 1, "min": 1, "max": 2},
                 {"material": "slime_goo", "weight": 2, "min": 1, "max": 2}]
         },
     ],
