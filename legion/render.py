@@ -25,6 +25,7 @@ from maki.cogs.legion.constants import (
     PLAYER_BASE_SPEED,
     SETTLEMENT_PLAYERS_PER_PAGE,
     WeaponSlot,
+    LOBBY_PLAYERS_SHOWN,
 )
 from maki.cogs.legion.model.model import (
     DungeonInstance,
@@ -147,7 +148,10 @@ def lobby_embed(
         color=color,
     )
     embed.set_author(name=strings.HUNTING_EXPEDITION_IN_PROGRESS)
-    names = "\n".join(f"- {n}" for n in participants) or strings.HUNTING_PARTY_EMPTY
+    if len(participants) > LOBBY_PLAYERS_SHOWN:
+        names = "\n".join(f"- {n}" for n in participants[:LOBBY_PLAYERS_SHOWN]) + "\n..."
+    else:
+        names = "\n".join(f"- {n}" for n in participants[:LOBBY_PLAYERS_SHOWN]) or strings.HUNTING_PARTY_EMPTY
     embed.add_field(name=f"{strings.HUNTING_PARTY} ({len(participants)}{strings.PLAYER_UNIT})", value=names)
     embed.set_footer(text=strings.HUNTING_FOOTER_TOOLTIP.format(command=strings.EXPEDITION_COMMAND_NAME))
     return embed
@@ -482,8 +486,8 @@ def recipe_detail_embed(
     color: discord.Colour,
     *,
     weapon=None,
-    actives: list = (),
-    passives: list = (),
+    actives: list = [],
+    passives: list = [],
     weapon_mastery: int = 0,
     material=None,
     mutation_range: tuple[int, int] | None = None,
@@ -697,6 +701,7 @@ def inventory_consumables_embed(
 def legion_embed(
     legion: Legion,
     member_count: int,
+    active_count: int,
     sheet: list[tuple[Material, int, int]],
     color: discord.Colour,
 ) -> discord.Embed:
@@ -708,7 +713,10 @@ def legion_embed(
         name=strings.EXPERIENCE_UNIT, 
         value=f"{progress_bar(legion.exp / max(1, next_cost) * 100)}\n-# {legion.exp}/{next_cost}", 
         inline=False)
-    embed.add_field(name=strings.MEMBERS_TITLE, value=str(member_count))
+    embed.add_field(
+        name=strings.MEMBERS_TITLE,
+        value=f"{member_count}",
+    )
     embed.add_field(name=strings.LEGION_KILLS_COUNT, value=str(legion.daily_kills))
     if sheet:
         lines = [

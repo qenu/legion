@@ -37,7 +37,10 @@ RANDOM_ELITE_MOB_CHANCE = 0.1  # 10% chance to spawn a higher-tier mob than the 
 
 # Settlement presentation: players per embed page (sorted by dealt+taken
 # desc); more players -> public paginator + per-presser ephemeral my-result.
-SETTLEMENT_PLAYERS_PER_PAGE = 5
+SETTLEMENT_PLAYERS_PER_PAGE = 3
+
+# Lobby players shown in the embed (sorted by join time); more players -> public
+LOBBY_PLAYERS_SHOWN = 10
 
 # Progress bars (custom head/body/tail emoji in strings.py): total segments
 # per bar. Each segment has empty/half/full states -> 2*BAR_LENGTH fill steps.
@@ -83,6 +86,12 @@ STARTER_POTION_KEY = "bitter_tonic"  # everyone onboards with 1 (revive safety)
 # intentionally flat 100% skills.
 STARTER_WEAPONS: tuple[str, ...] = ("rusty_sword", "vine_bow", "old_staff")
 
+# Per-stack item ceiling, enforced in code on BOTH a player's material stack
+# (PlayerMaterial) and the legion stockpile (LegionStockpile). Player-side adds
+# clamp at the cap (excess discarded); donations only accept up to the room
+# left, leaving the overflow in the donor's bag. Well under the int column max.
+MAX_ITEM_STACK = 999_999
+
 # Gathering (AFK). Payouts computed at stop: materials per 30-min chunk,
 # gather mastery +1 per full hour, both capped by the "bag" -- the max counted
 # hours, which is gather mastery's whole job. Legion level only unlocks sites.
@@ -108,6 +117,12 @@ QUALITY_TIER_THRESHOLDS = (  # (min average, tier value) checked in order
 # Leveling requires pressing Upgrade with banked exp >= cost AND the stockpile
 # covering the material sheet (base_qty scaled by member count).
 LEGION_UPGRADE_QTY_PER_MEMBER = 1.0  # actual qty = base_qty * members * this
+# Upgrade cost scales by ACTIVE members only: those seen within this window
+# (plus never-stamped legacy rows, grandfathered in until they next act).
+ACTIVE_WINDOW_DAYS = 7
+# Throttle the last_active_at write so it isn't a DB round-trip every command;
+# a stamp fresh to the hour is plenty for a 7-day window.
+ACTIVE_TOUCH_THROTTLE_MINUTES = 60
 
 # Contribution points (per-legion status; reset when switching legions).
 CONTRI_PER_MAT_RARITY  = 1  # donating: qty * material.rarity * this

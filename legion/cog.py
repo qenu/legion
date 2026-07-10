@@ -269,6 +269,7 @@ class LegionCog(commands.Cog):
             own_level = own.level
         eff_max = await effective_max_hp(player, own_level)
         await self.players.apply_regen(player, own_level, eff_max)
+        await self.players.touch_active(player)
         return player
 
     async def ensure_alive(
@@ -629,11 +630,14 @@ class LegionCog(commands.Cog):
         legion = await self._legion_for(interaction.guild)
         player = await self.players.get(interaction.user.id)
         member_count = await Player.filter(legion=legion).count()
+        active_count = await self.legions.active_member_count(legion)
         sheet = await self.legions.upgrade_sheet(legion)
         is_officer = interaction.user.guild_permissions.manage_guild or bool(
             player and player.is_legion_manager
         )
-        embed = render.legion_embed(legion, member_count, sheet, self.bot.color)
+        embed = render.legion_embed(
+            legion, member_count, active_count, sheet, self.bot.color
+        )
         view = LegionView(self, interaction.user.id, legion, is_officer)
         if edit:
             await self._edit_tracked(interaction, embed=embed, view=view)
@@ -728,20 +732,31 @@ class LegionCog(commands.Cog):
         if not await self.ensure_alive(interaction, player):
             return
         material = await Material.get_or_none(id=material_id)
-        contri = (
+        result = (
             await self.legions.donate(player, legion, material, qty)
             if material is not None
             else None
         )
-        if contri is not None:
-            note = strings.LEGION_DONATED.format(
-                qty=qty, material=material.name, contri=contri
-            )
-            await self._announce_donation(interaction, legion, player, material, qty)
-        else:
+        if result is None:
             note = strings.LEGION_DONATE_SHORT.format(
                 material=material.name if material else "?"
             )
+        else:
+            accepted, contri = result
+            if accepted == 0:
+                note = strings.LEGION_STOCKPILE_FULL.format(material=material.name)
+            else:
+                template = (
+                    strings.LEGION_DONATED_CAPPED
+                    if accepted < qty
+                    else strings.LEGION_DONATED
+                )
+                note = template.format(
+                    qty=accepted, material=material.name, contri=contri
+                )
+                await self._announce_donation(
+                    interaction, legion, player, material, accepted
+                )
         await self.show_donate(interaction, legion, note=note)
 
     async def _announce_donation(

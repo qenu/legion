@@ -9,8 +9,8 @@ apply (rows are never hard-deleted; the /patch review shows removals).
 """
 
 PATCH: dict = {
-    "version": "0.1.8",
-    "notes": "新增祝福手套、苦藥水與治癒藥水的製作法，並修正了技能數值計算的錯誤。",
+    "version": "0.1.9",
+    "notes": "- Added new materials, recipes, and mobs for more variety in gameplay.",
     "materials": [
         {"key": "iron_ore", "name": "鐵礦石", "rarity": 1,
          "description": "帶著鏽色紋路的礦石，鍛造的基礎。"},
@@ -38,7 +38,16 @@ PATCH: dict = {
          "description": "苦到皺眉，但能把人從鬼門關拉回來。"},
         {"key": "healing_potion", "name": "治癒藥水", "kind": "potion", "rarity": 1,
          "stat_bonus_type": "hp", "stat_bonus_value": 5, 
-         "description": "小小一瓶，能快速回復少量生命。"}
+         "description": "小小一瓶，能快速回復少量生命。"},
+        {"key": "rabbit_foot", "name": "兔腳", "rarity": 2,
+         "description": "傳說中能帶來好運的兔腳，摸起來軟軟的。"},
+        {"key": "lizard_tail", "name": "蜥蜴尾巴", "rarity": 2,
+         "description": "斷掉的尾巴仍在微微蠕動，彷彿還能咬人。"},
+        {"key": "molt_skin", "name": "脫落的皮", "rarity": 2,
+         "description": "脫落的皮，感覺有點噁心。"},
+        {"key": "spring_roll", "name": "春捲", "kind": "food", "rarity": 2,
+         "stat_bonus_type": "speed", "stat_bonus_value": 2, "duration": 30,
+         "description": "半透明的外皮，裡面包著各種蔬菜，吃起來清爽。"},
     ],
     "categories": [
         {"key": "sword", "name": "刀劍"},
@@ -64,6 +73,7 @@ PATCH: dict = {
         {"key": "focus", "name": "專注", "stat_bonus_type": "atk", "stat_bonus_value": 5},
         {"key": "thick_hide", "name": "堅硬", "stat_bonus_type": "def", "stat_bonus_value": 4},
         {"key": "enrage", "name": "狂怒", "stat_bonus_type": "atk", "stat_bonus_value": 15},
+        {"key": "haste", "name": "加速", "stat_bonus_type": "speed", "stat_bonus_value": 5},
     ],
     "weapons": [
         {
@@ -123,31 +133,79 @@ PATCH: dict = {
         }
     ],
     "mobs": [
-        {"key": "slime", "name": "史萊姆", "tier": 1, "rounds_limit": 8,
-         "hp": 30, "atk": 6, "def": 2, "speed": 6,
-         "skills": [], "passives": [],
-         "drops": [{"material": "slime_goo", "weight": 3, "min": 1, "max": 2},
-                   {"material": "sunherb", "weight": 1, "min": 1, "max": 1}]},
-        {"key": "wild_boar", "name": "野豬", "tier": 1, "rounds_limit": 8,
-         "hp": 60, "atk": 11, "def": 6, "speed": 8,
-         "skills": [{"skill": "smash", "cooldown": 2, "hp_threshold": 1.0}],
-         "passives": [],
-         "drops": [{"material": "boar_hide", "weight": 3, "min": 1, "max": 2},
-                   {"material": "duskberry", "weight": 1, "min": 1, "max": 1}]},
-        {"key": "grey_wolf", "name": "灰狼", "tier": 2, "rounds_limit": 7,
-         "hp": 80, "atk": 13, "def": 3, "speed": 12,
-         "skills": [{"skill": "rending_howl", "cooldown": 3, "hp_threshold": 1.0}],
-         "passives": [{"skill": "enrage", "requirement_type": "hp_below",
-                       "requirement_value": 0.4}],
-         "drops": [{"material": "wolf_fang", "weight": 3, "min": 1, "max": 2},
-                   {"material": "wolf_hide", "weight": 1, "min": 1, "max": 1}]},
-        {"key": "stone_golem", "name": "石像巨人", "tier": 3, "rounds_limit": 6,
-         "hp": 250, "atk": 15, "def": 15, "speed": 3,
-         "skills": [{"skill": "quake", "cooldown": 3, "hp_threshold": 0.7}],
-         "passives": [{"skill": "thick_hide"}],
-         "drops": [{"material": "golem_core", "weight": 1, "min": 1, "max": 1},
-                   {"material": "rough_stone", "weight": 3, "min": 2, "max": 4},
-                   {"material": "iron_ore", "weight": 2, "min": 1, "max": 2}]},
+        {
+            "key": "slime", "name": "史萊姆", "tier": 1, "rounds_limit": 8,
+            "hp": 30, "atk": 6, "def": 2, "speed": 6,
+            "skills": [], "passives": [],
+            "drops": [
+                {"material": "slime_goo", "weight": 3, "min": 1, "max": 2},
+                {"material": "sunherb", "weight": 1, "min": 1, "max": 1}]
+        },
+        {
+            "key": "wild_boar", "name": "野豬", "tier": 1, "rounds_limit": 8,
+            "hp": 60, "atk": 11, "def": 6, "speed": 8,
+            "skills": [
+                {"skill": "smash", "cooldown": 2, "hp_threshold": 1.0}],
+            "passives": [],
+            "drops": [
+                {"material": "boar_hide", "weight": 3, "min": 1, "max": 2},
+                {"material": "duskberry", "weight": 1, "min": 1, "max": 1}]},
+        {
+            "key": "wild_rabbit", "name": "野兔", "tier": 1, "rounds_limit": 8,
+            "hp": 20, "atk": 4, "def": 1, "speed": 10,
+            "skills": [], 
+            "passives": [
+                {"skill": "fleetfoot", "requirement_type": "hp_below","requirement_value": 0.7}
+            ],
+            "drops": [
+                {"material": "sunherb", "weight": 2, "min": 1, "max": 1},
+                {"material": "rabbit_foot", "weight": 1, "min": 1, "max": 1}]
+        },
+        {   
+            "key": "grey_wolf", "name": "灰狼", "tier": 2, "rounds_limit": 7,
+            "hp": 80, "atk": 13, "def": 3, "speed": 12,
+            "skills": [
+                {"skill": "rending_howl", "cooldown": 3, "hp_threshold": 1.0}],
+            "passives": [
+                {"skill": "enrage", "requirement_type": "hp_below","requirement_value": 0.4}],
+            "drops": [
+                {"material": "wolf_fang", "weight": 3, "min": 1, "max": 2},
+                {"material": "wolf_hide", "weight": 1, "min": 1, "max": 1}]
+        },
+        {
+            "key": "dire_wolf", "name": "兇狼", "tier": 2, "rounds_limit": 7,
+            "hp": 120, "atk": 18, "def": 5, "speed": 14,
+            "skills": [
+                {"skill": "rending_howl", "cooldown": 3, "hp_threshold": 1.0}],
+            "passives": [
+                {"skill": "enrage", "requirement_type": "hp_below","requirement_value": 0.7},
+                {"skill": "haste", "requirement_type": "hp_below","requirement_value": 0.4}],
+            "drops": [
+                {"material": "wolf_fang", "weight": 3, "min": 1, "max": 2},
+                {"material": "wolf_hide", "weight": 2, "min": 1, "max": 2}]
+        },
+        {
+            "key": "flame_lizard", "name": "火蜥蜴", "tier": 2, "rounds_limit": 7,
+            "hp": 90, "atk": 14, "def": 4, "speed": 10,
+            "skills": [
+                {"skill": "spark", "cooldown": 0, "hp_threshold": 1.0}],
+            "passives": [],
+            "drops": [
+                {"material": "lizard_tail", "weight": 3, "min": 1, "max": 1},
+                {"material": "molt_skin", "weight": 2, "min": 1, "max": 2}]
+        },
+        {
+            "key": "stone_golem", "name": "石像巨人", "tier": 3, "rounds_limit": 6,
+            "hp": 250, "atk": 15, "def": 15, "speed": 3,
+            "skills": [
+                {"skill": "quake", "cooldown": 3, "hp_threshold": 0.7}],
+            "passives": [
+                {"skill": "thick_hide"}],
+            "drops": [
+                {"material": "golem_core", "weight": 1, "min": 1, "max": 1},
+                {"material": "rough_stone", "weight": 3, "min": 2, "max": 4},
+                {"material": "iron_ore", "weight": 2, "min": 1, "max": 2}]
+        },
     ],
     "grounds": [
         {"key": "verdant_meadow", "name": "翠綠草原", "danger": 1, "min_legion_level": 1,
@@ -203,26 +261,32 @@ PATCH: dict = {
                     {"material": "golem_core", "qty": 1}]},
         {"key": "forge_blessed_gloves", "name": "祝福手套", 
          "weapon": "blessed_gloves",
-         "inputs": [{"material": "sunherb", "qty": 5},
-                    {"material": "duskberry", "qty": 3},
-                    {"material": "golem_core", "qty": 1}]},
+         "inputs": [{"material": "molt_skin", "qty": 5},
+                    {"material": "rabbit_foot", "qty": 2},
+                    {"material": "golem_core", "qty": 2}]},
         {"key": "cook_hearty_stew", "name": "燉菜", "skill": "cook",
          "material": "hearty_stew", "qty": 2, "req": 0,
          "inputs": [{"material": "sunherb", "qty": 2},
                     {"material": "duskberry", "qty": 1}]},
+        {"key": "cook_spring_roll", "name": "春捲", "skill": "cook",
+         "material": "spring_roll", "qty": 2, "req": 1,
+         "inputs": [{"material": "molt_skin", "qty": 1},
+                    {"material": "sunherb", "qty": 3}]},
         {"key": "brew_bitter_tonic", "name": "苦藥水", "skill": "brew",
          "material": "bitter_tonic", "qty": 1, "req": 1,
-         "inputs": [{"material": "sunherb", "qty": 2},
+         "inputs": [{"material": "rabbit_foot", "qty": 1},
                     {"material": "duskberry", "qty": 2}]},
         {"key": "brew_healing_potion", "name": "治癒藥水", "skill": "brew",
-         "material": "healing_potion", "qty": 2, "req": 0,
-         "inputs": [{"material": "duskberry", "qty": 5}]},
+         "material": "healing_potion", "qty": 1, "req": 0,
+         "inputs": [{"material": "duskberry", "qty": 5},
+                    {"material": "slime_goo", "qty": 10}]},
     ],
     "upgrade_costs": [
         {"level": 2, "material": "slime_goo", "base_qty": 5},
         {"level": 2, "material": "boar_hide", "base_qty": 3},
         {"level": 3, "material": "wolf_fang", "base_qty": 5},
         {"level": 3, "material": "rough_stone", "base_qty": 10},
+        {"level": 3, "material": "rabbit_foot", "base_qty": 3},
         {"level": 4, "material": "golem_core", "base_qty": 2},
         {"level": 4, "material": "wolf_hide", "base_qty": 5},
         {"level": 4, "material": "iron_ore", "base_qty": 10},

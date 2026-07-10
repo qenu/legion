@@ -8,7 +8,7 @@ in its ``__init__``.
 import random
 from datetime import datetime, timedelta
 
-from tortoise.expressions import F
+from tortoise.expressions import F, Q
 from tortoise.transactions import in_transaction
 
 from maki.cogs.legion.calculator import (
@@ -27,9 +27,12 @@ from maki.cogs.legion.constants import (
     BASE_REGEN_PER_MINUTE,
     REVIVE_HP,
     REVIVE_MINUTES,
+    ACTIVE_TOUCH_THROTTLE_MINUTES,
+    ACTIVE_WINDOW_DAYS,
     CONTRI_PER_MAT_RARITY,
     ContentStatus,
     CRAFT_SKILLS,
+    MAX_ITEM_STACK,
     GATHER_SKILLS,
     MASTERY_SOFT_CAP,
     DungeonStatus,
@@ -71,7 +74,11 @@ class PlayerRepo:
 
     async def get_or_create(self, discord_id: int, username: str) -> Player:
         player, _ = await Player.get_or_create(
-            discord_id=discord_id, defaults={"username": username}
+            discord_id=discord_id,
+            defaults={
+                "username": username,
+                "last_active_at": datetime.now().astimezone(),
+            },
         )
         return player
 
@@ -153,6 +160,19 @@ class PlayerRepo:
         player.username = username
         await player.save(update_fields=["username"])
 
+    async def touch_active(self, player: Player) -> None:
+        """Stamp last_active_at, throttled: skip the write when the existing
+        stamp is fresher than ACTIVE_TOUCH_THROTTLE_MINUTES, so this can run on
+        every command without a DB round-trip each time."""
+        now = datetime.now().astimezone()
+        last = player.last_active_at
+        if last is not None and now - last < timedelta(
+            minutes=ACTIVE_TOUCH_THROTTLE_MINUTES
+        ):
+            return
+        player.last_active_at = now
+        await player.save(update_fields=["last_active_at"])
+
 
 class LegionRepo:
     """Query helpers over Legion. One row per Discord guild (world)."""
@@ -187,9 +207,12 @@ class LegionRepo:
 
     async def donate(
         self, player: Player, legion: Legion, material: Material, qty: int
-    ) -> int | None:
-        """Move mats from a player's inventory into the legion stockpile.
-        Returns contribution earned, or None if the player lacks the mats."""
+    ) -> tuple[int, int] | None:
+        """Move up to ``qty`` mats from a player's inventory into the legion
+        stockpile, which is capped at MAX_ITEM_STACK. Returns
+        ``(accepted_qty, contribution)``; ``accepted_qty`` is below ``qty`` when
+        the stockpile fills up (the overflow stays in the donor's bag), and 0
+        when it is already full. Returns None if the player lacks the mats."""
         async with in_transaction():
             stack = (
                 await PlayerMaterial.filter(player=player, material=material)
@@ -198,32 +221,52 @@ class LegionRepo:
             )
             if stack is None or stack.quantity < qty:
                 return None
-            stack.quantity -= qty
-            await stack.save(update_fields=["quantity"])
 
-            pile, created = await LegionStockpile.get_or_create(
-                legion=legion, material=material, defaults={"quantity": qty}
+            pile = (
+                await LegionStockpile.filter(legion=legion, material=material)
+                .select_for_update()
+                .first()
             )
-            if not created:
-                pile.quantity += qty
+            current = pile.quantity if pile is not None else 0
+            accepted = min(qty, max(0, MAX_ITEM_STACK - current))
+            if accepted == 0:
+                return (0, 0)
+
+            stack.quantity -= accepted
+            await stack.save(update_fields=["quantity"])
+            if pile is None:
+                await LegionStockpile.create(
+                    legion=legion, material=material, quantity=accepted
+                )
+            else:
+                pile.quantity += accepted
                 await pile.save(update_fields=["quantity"])
 
-            contri = qty * material.rarity * CONTRI_PER_MAT_RARITY
+            contri = accepted * material.rarity * CONTRI_PER_MAT_RARITY
             player.contribution += contri
             await player.save(update_fields=["contribution"])
-            return contri
+            return (accepted, contri)
 
     async def stockpiled(self, legion: Legion, material: Material) -> int:
         """Current legion stockpile total of a material (0 if none)."""
         pile = await LegionStockpile.get_or_none(legion=legion, material=material)
         return pile.quantity if pile is not None else 0
 
+    async def active_member_count(self, legion: Legion) -> int:
+        """Members seen within ACTIVE_WINDOW_DAYS. Never-stamped legacy rows
+        (last_active_at is null) are grandfathered in as active."""
+        cutoff = datetime.now().astimezone() - timedelta(days=ACTIVE_WINDOW_DAYS)
+        return await Player.filter(
+            Q(legion=legion),
+            Q(last_active_at__gte=cutoff) | Q(last_active_at__isnull=True),
+        ).count()
+
     async def upgrade_sheet(
         self, legion: Legion
     ) -> list[tuple[Material, int, int]]:
         """Requirements for the NEXT level: ``(material, needed, stockpiled)``
-        with needed already scaled by member count."""
-        members = await Player.filter(legion=legion).count()
+        with needed already scaled by the ACTIVE member count."""
+        members = await self.active_member_count(legion)
         costs = await LegionUpgradeCost.filter(level=legion.level + 1).prefetch_related(
             "material"
         )
@@ -269,12 +312,14 @@ class InventoryRepo:
     async def add_material(
         self, player: Player, material: Material, qty: int
     ) -> None:
+        """Add to a player's stack, clamped at MAX_ITEM_STACK (excess lost)."""
         async with in_transaction():
             stack, created = await PlayerMaterial.get_or_create(
-                player=player, material=material, defaults={"quantity": qty}
+                player=player, material=material,
+                defaults={"quantity": min(qty, MAX_ITEM_STACK)},
             )
             if not created:
-                stack.quantity += qty
+                stack.quantity = min(stack.quantity + qty, MAX_ITEM_STACK)
                 await stack.save(update_fields=["quantity"])
 
     async def quantity(self, player: Player, material: Material) -> int:

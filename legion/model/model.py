@@ -38,6 +38,11 @@ class Player(Model):
     )
     left_legion_at = fields.DatetimeField(null=True)
 
+    # Last time the player ran any command (throttled write via ensure_player).
+    # Legion upgrade costs scale by members active within ACTIVE_WINDOW_DAYS;
+    # null = legacy row not yet stamped (grandfathered as active until it acts).
+    last_active_at = fields.DatetimeField(null=True)
+
     # Per-legion status; reset to 0 when switching legions. Earned by donating
     # (qty * rarity) and the first dungeon fight of each UTC day.
     contribution  = fields.IntField(default=0)
