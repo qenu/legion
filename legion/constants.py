@@ -100,10 +100,10 @@ STARTER_WEAPONS: tuple[str, ...] = ("rusty_sword", "vine_bow", "old_staff")
 # left, leaving the overflow in the donor's bag. Well under the int column max.
 MAX_ITEM_STACK = 999_999
 
-# Gathering (AFK). Payouts computed at stop: materials per 30-min chunk,
+# Gathering (AFK). Payouts computed at stop: materials per 20-min chunk,
 # gather mastery +1 per full hour, both capped by the "bag" -- the max counted
 # hours, which is gather mastery's whole job. Legion level only unlocks sites.
-GATHER_CHUNK_MINUTES        = 30
+GATHER_CHUNK_MINUTES        = 20
 GATHER_BAG_BASE_HOURS       = 4
 GATHER_BAG_HOURS_PER_LEVEL  = 2
 GATHER_MASTERY_MAX_PER_AFK  = 24  # pts cap per session (= 24 counted hours)
