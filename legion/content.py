@@ -9,8 +9,8 @@ apply (rows are never hard-deleted; the /patch review shows removals).
 """
 
 PATCH: dict = {
-    "version": "0.1.9",
-    "notes": "- Added new materials, recipes, and mobs for more variety in gameplay.",
+    "version": "0.1.10",
+    "notes": "Added new mobs, grounds, and recipes. Adjusted mob pools for existing grounds.",
     "materials": [
         {"key": "iron_ore", "name": "鐵礦石", "rarity": 1,
          "description": "帶著鏽色紋路的礦石，鍛造的基礎。"},
@@ -210,13 +210,13 @@ PATCH: dict = {
     "grounds": [
         {"key": "verdant_meadow", "name": "翠綠草原", "danger": 1, "min_legion_level": 1,
          "description": "一望無際的草原，高聳的草叢中隱藏著未知的危險。",
-         "pool": [{"mob": "slime", "weight": 3}, {"mob": "wild_boar", "weight": 2}]},
+         "pool": [{"mob": "slime", "weight": 3}, {"mob": "wild_boar", "weight": 2}, {"mob": "wild_rabbit", "weight": 3}]},
         {"key": "whispering_forest", "name": "低語森林", "danger": 3, "min_legion_level": 2,
          "description": "樹木茂密的森林，彷彿傳來低語聲。",
-         "pool": [{"mob": "wild_boar", "weight": 2}, {"mob": "grey_wolf", "weight": 3}]},
+         "pool": [{"mob": "wild_boar", "weight": 2}, {"mob": "grey_wolf", "weight": 3}, {"mob": "flame_lizard", "weight": 2}]},
         {"key": "sunken_quarry", "name": "沉沒採石場", "danger": 5, "min_legion_level": 4,
          "description": "這裡曾經是個繁榮的採石場，但現在已經荒廢了。",
-         "pool": [{"mob": "grey_wolf", "weight": 2}, {"mob": "stone_golem", "weight": 3}]},
+         "pool": [{"mob": "grey_wolf", "weight": 2}, {"mob": "dire_wolf", "weight": 3}, {"mob": "stone_golem", "weight": 3}]},
     ],
     "sites": [
         {"key": "old_mines", "name": "舊礦坑", "skill": "mine", "min_legion_level": 1,
