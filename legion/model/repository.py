@@ -255,6 +255,34 @@ class LegionRepo:
         pile = await LegionStockpile.get_or_none(legion=legion, material=material)
         return pile.quantity if pile is not None else 0
 
+    async def stock_add(self, legion: Legion, material: Material, qty: int) -> int:
+        """Admin: add to the stockpile, clamped at MAX_ITEM_STACK. New total."""
+        async with in_transaction():
+            pile, created = await LegionStockpile.get_or_create(
+                legion=legion, material=material,
+                defaults={"quantity": min(qty, MAX_ITEM_STACK)},
+            )
+            if not created:
+                pile.quantity = min(pile.quantity + qty, MAX_ITEM_STACK)
+                await pile.save(update_fields=["quantity"])
+            return pile.quantity
+
+    async def stock_remove(
+        self, legion: Legion, material: Material, qty: int
+    ) -> int | None:
+        """Admin: remove from the stockpile. New total, or None if short."""
+        async with in_transaction():
+            pile = (
+                await LegionStockpile.filter(legion=legion, material=material)
+                .select_for_update()
+                .first()
+            )
+            if pile is None or pile.quantity < qty:
+                return None
+            pile.quantity -= qty
+            await pile.save(update_fields=["quantity"])
+            return pile.quantity
+
     async def active_member_count(self, legion: Legion) -> int:
         """Members seen within ACTIVE_WINDOW_DAYS. Never-stamped legacy rows
         (last_active_at is null) are grandfathered in as active."""

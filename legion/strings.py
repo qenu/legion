@@ -308,6 +308,7 @@ CRAFT_NO_SUCH_RECIPE = "找不到指定的配方。"
 # --- patching ---
 PATCH_TITLE = "版本更新"
 PATCH_BLOCKED = "🔧 即將進行版本更新，功能暫時關閉中"
+LEGION_FROZEN = "🧊 系統維護中，功能暫時關閉，請稍後再試。"
 PATCH_UP_TO_DATE = "✅ 目前已是最新版本。"
 PATCH_UPDATE_FOUND = "🆕 有新的更新可用，查看下方更新內容。"
 PATCH_SCHEDULED = (

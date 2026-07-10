@@ -8,6 +8,7 @@ orchestrates Discord I/O around them.
 import asyncio
 import random
 from datetime import datetime, timedelta
+from typing import Union
 
 import discord
 from discord import app_commands
@@ -139,6 +140,11 @@ class LegionCog(commands.Cog):
         self._replay_tasks: set[asyncio.Task] = set()
         self._pending_patch: GamePatch | None = None
         self._patch_task: asyncio.Task | None = None
+        # Manual maintenance freeze: an owner toggle (`admin freeze on`) that
+        # blocks ALL commands, independent of the scheduled-patch phases. Meant
+        # as the graceful lead-in to a force patch -- flip it on, let in-flight
+        # actions drain, force-apply, flip it off. In-memory: a restart clears it.
+        self._frozen = False
         # Right-click a member -> Apps -> 使用道具: consumables on OTHERS,
         # including the potion revive. Context menus can't live in cogs as
         # decorated methods, so it's built here and (un)registered in
@@ -180,8 +186,11 @@ class LegionCog(commands.Cog):
     # --- patch gate ----------------------------------------------------------
 
     def _patch_blocked(self, session_start: bool = False) -> bool:
-        """The update lock: 'locked' blocks session starts, 'frozen'/'due'
-        blocks everything."""
+        """The update lock: a manual maintenance freeze blocks everything; the
+        scheduled patch's 'locked' blocks session starts, 'frozen'/'due' block
+        everything."""
+        if self._frozen:  # manual owner freeze: hard-blocks every command
+            return True
         pending = self._pending_patch
         if pending is None or pending.lock_at is None:
             return False
@@ -193,12 +202,11 @@ class LegionCog(commands.Cog):
         return phase == "locked" and session_start
 
     async def _send_patch_blocked(self, interaction: discord.Interaction) -> None:
+        msg = strings.LEGION_FROZEN if self._frozen else strings.PATCH_BLOCKED
         if interaction.response.is_done():
-            await interaction.followup.send(strings.PATCH_BLOCKED, ephemeral=True)
+            await interaction.followup.send(msg, ephemeral=True)
         else:
-            await interaction.response.send_message(
-                strings.PATCH_BLOCKED, ephemeral=True
-            )
+            await interaction.response.send_message(msg, ephemeral=True)
 
     @staticmethod
     async def _edit_tracked(
@@ -1882,136 +1890,354 @@ class LegionCog(commands.Cog):
 
     # --- [p]settings (owner-only text command group) ------------------------------
 
-    @commands.group(name="set", hidden=True, invoke_without_command=True)
+    @commands.group(name="admin", hidden=True, invoke_without_command=True)
     @commands.is_owner()
-    async def settings_group(self, ctx: commands.Context) -> None:
-        """Owner console. Subcommands: patch, seed, player, legion."""
-        await ctx.send(
-            "⚙️ owner console —\n"
-            "`set patch` · staged content updates\n"
-            "`set seed` · day-zero bootstrap\n"
-            "`set player <@user|id> <give|remove> <item_key> [qty]`\n"
-            "`set legion <guild_id> info` / "
-            "`set legion <guild_id> set <field> <value>`"
+    async def admin_group(self, ctx: commands.Context) -> None:
+        """Owner console. Target = a @user/user-id (player) or guild-id (legion)."""
+        prefix = self.bot.command_prefix
+        embed = discord.Embed(
+            title="⚙️ Owner Console",
+            description=(
+                "Admin tools for players & legions. **Target** is a "
+                "`@user`/user-id (player) or a guild-id (legion)."
+            ),
+            color=self.bot.color,
         )
+        legion_fields = ", ".join(f"`{f}`" for f in self._LEGION_SET_FIELDS)
+        player_fields = ", ".join(f"`{f}`" for f in self._PLAYER_SET_FIELDS)
+        embed.add_field(
+            name=f"{prefix}admin get <user|guild>",
+            value="Inspect a player or a legion — stats, level, contribution, "
+            "channel, member counts.",
+            inline=False,
+        )
+        embed.add_field(
+            name=f"{prefix}admin give <user|guild> <item> [qty]",
+            value="Grant an item (by key or name). A **user** fills their bag; "
+            "a **guild** fills the legion stockpile (materials only). `qty` ≤ 100.",
+            inline=False,
+        )
+        embed.add_field(
+            name=f"{prefix}admin remove <user|guild> <item> [qty]  ·  alias rm",
+            value="Take an item back — from a player's bag or a legion stockpile.",
+            inline=False,
+        )
+        embed.add_field(
+            name=f"{prefix}admin set <user|guild> <field> [value]",
+            value="Set a field, or **omit the value to read** the current one.\n"
+            f"Legion: {legion_fields}\n"
+            f"Player: {player_fields}, or a **mastery** — a weapon category "
+            "(`sword`, `bow`, …) or life skill (`mine`/`garden`/`cook`/`brew`).",
+            inline=False,
+        )
+        embed.add_field(
+            name=f"{prefix}admin freeze [on|off]",
+            value="Maintenance freeze: blocks **all** commands — the graceful "
+            "lead-in to a force patch. Bare toggles; clears on restart.",
+            inline=False,
+        )
+        embed.add_field(
+            name=f"{prefix}admin patch",
+            value="Staged content updates: review, schedule, or force-apply the "
+            "on-disk patch.",
+            inline=False,
+        )
+        await ctx.send(embed=embed)
 
-    @settings_group.command(name="player")
-    @commands.is_owner()
-    async def settings_player(
-        self,
-        ctx: commands.Context,
-        user: discord.User,
-        action: str,
-        item_key: str,
-        qty: int = 1,
-    ) -> None:
-        """Give/remove items (materials or weapons, by content key)."""
-        action = action.lower()
-        if action not in ("give", "remove"):
-            await ctx.send("Action must be `give` or `remove`.")
-            return
-        player = await self.players.get(user.id)
-        if player is None:
-            await ctx.send("That user hasn't onboarded yet.")
-            return
-        qty = max(1, min(qty, 100))
-
-        material = await Material.get_or_none(key=item_key)
+    @staticmethod
+    async def _resolve_item(item: str):
+        """Look up a Material or Weapon by stable key, then by display name.
+        Returns ``(material, weapon)`` with exactly one set, or ``(None, None)``."""
+        material = await Material.get_or_none(
+            key=item
+        ) or await Material.get_or_none(name=item)
         if material is not None:
-            if action == "give":
-                await self.inventory.add_material(player, material, qty)
-                await ctx.send(
-                    f"✅ {player.username} +{material.name}(`{item_key}`)×{qty}"
-                )
-            else:
-                if await self.inventory.consume(player, {material.id: qty}):
-                    await ctx.send(
-                        f"✅ {player.username} −{material.name}(`{item_key}`)×{qty}"
-                    )
-                else:
-                    await ctx.send(
-                        f"❌ {player.username} doesn't have {material.name}(`{item_key}`)×{qty}."
-                    )
-            return
+            return material, None
+        weapon = await Weapon.get_or_none(
+            key=item
+        ) or await Weapon.get_or_none(name=item)
+        return None, weapon
 
-        weapon = await Weapon.get_or_none(key=item_key)
-        if weapon is not None:
-            if action == "give":
-                for _ in range(min(qty, 10)):
-                    await self.inventory.grant_weapon(player, weapon)
-                await ctx.send(
-                    f"✅ {player.username} +{min(qty, 10)}× {weapon.name} "
-                    f"(`{item_key}`, flat)"
-                )
-            else:
-                pw = await PlayerWeapon.filter(
-                    player=player, weapon=weapon, equipped_slot__isnull=True
-                ).first()
-                if pw is None:
-                    await ctx.send(
-                        "❌ No unequipped instance to remove (unequip first)."
-                    )
-                else:
-                    await pw.delete()
-                    await ctx.send(
-                        f"✅ removed one {weapon.name} from {player.username}"
-                    )
-            return
-
-        await ctx.send(f"❌ No material or weapon with key `{item_key}`.")
-
+    # exposed field -> (model attribute, caster)
     _LEGION_SET_FIELDS = {
-        "level": int, "exp": int, "daily_kills": int, "channel_id": int,
-        "name": str,
+        "level": ("level", int),
+        "exp": ("exp", int),
+        "name": ("name", str),
+        "channel_id": ("channel_id", int),
+        "killcount": ("daily_kills", int),
+    }
+    _PLAYER_SET_FIELDS = {
+        "nickname": ("username", str),
+        "health": ("health_points", int),
+        "contribution": ("contribution", int),
     }
 
-    @settings_group.command(name="legion")
+    @admin_group.command(name="get")
     @commands.is_owner()
-    async def settings_legion(
-        self,
-        ctx: commands.Context,
-        guild_id: int,
-        action: str,
-        field: str | None = None,
-        *,
-        value: str | None = None,
+    async def admin_get(
+        self, ctx: commands.Context, target: Union[discord.User, discord.Guild]
     ) -> None:
-        """Inspect or tweak a legion row: info / set <field> <value>."""
-        legion = await self.legions.get(guild_id)
-        if legion is None:
-            await ctx.send("No legion with that guild id.")
-            return
-        action = action.lower()
-        if action == "info":
+        """Inspect a player (user) or a legion (guild)."""
+        if isinstance(target, discord.Guild):
+            legion = await self.legions.get(target.id)
+            if legion is None:
+                await ctx.send("No legion for that guild id.")
+                return
             members = await Player.filter(legion=legion).count()
+            active = await self.legions.active_member_count(legion)
             await ctx.send(
                 f"🏰 **{legion.name}** (guild {legion.guild_id})\n"
                 f"level {legion.level} · exp {legion.exp} · "
-                f"kills today {legion.daily_kills} · members {members} · "
+                f"kills today {legion.daily_kills} · "
+                f"members {members} ({active} active) · "
                 f"channel {legion.channel_id or '*unset*'}"
             )
             return
-        if action != "set" or field is None or value is None:
-            await ctx.send("Usage: `settings legion <guild_id> set <field> <value>`")
+        player = await self.players.get(target.id)
+        if player is None:
+            await ctx.send("That user hasn't onboarded yet.")
             return
-        caster = self._LEGION_SET_FIELDS.get(field)
-        if caster is None:
+        legion = await player.legion if player.legion_id else None
+        await ctx.send(
+            f"🧑 **{player.username}** (id {player.discord_id})\n"
+            f"hp {player.health_points}/{player.max_health_points} · "
+            f"legion {legion.name if legion else '*none*'} · "
+            f"contribution {player.contribution} · "
+            f"manager {player.is_legion_manager}"
+        )
+
+    @admin_group.command(name="give")
+    @commands.is_owner()
+    async def admin_give(
+        self,
+        ctx: commands.Context,
+        target: Union[discord.User, discord.Guild],
+        item: str,
+        qty: int = 1,
+    ) -> None:
+        """Give an item to a player's bag (user) or a legion stockpile (guild)."""
+        qty = max(1, min(qty, 100))
+        material, weapon = await self._resolve_item(item)
+        if isinstance(target, discord.Guild):
+            legion = await self.legions.get(target.id)
+            if legion is None:
+                await ctx.send("No legion for that guild id.")
+                return
+            if material is None:
+                await ctx.send("Legion stockpiles hold materials only.")
+                return
+            total = await self.legions.stock_add(legion, material, qty)
             await ctx.send(
-                f"Settable fields: {', '.join(self._LEGION_SET_FIELDS)}"
+                f"✅ {legion.name} stockpile +{material.name}×{qty} (now {total:,})"
+            )
+            return
+        player = await self.players.get(target.id)
+        if player is None:
+            await ctx.send("That user hasn't onboarded yet.")
+            return
+        if material is not None:
+            await self.inventory.add_material(player, material, qty)
+            await ctx.send(f"✅ {player.username} +{material.name}×{qty}")
+        elif weapon is not None:
+            for _ in range(min(qty, 10)):
+                await self.inventory.grant_weapon(player, weapon)
+            await ctx.send(
+                f"✅ {player.username} +{min(qty, 10)}× {weapon.name} (flat)"
+            )
+        else:
+            await ctx.send(f"❌ No material or weapon named `{item}`.")
+
+    @admin_group.command(name="remove", aliases=["rm"])
+    @commands.is_owner()
+    async def admin_remove(
+        self,
+        ctx: commands.Context,
+        target: Union[discord.User, discord.Guild],
+        item: str,
+        qty: int = 1,
+    ) -> None:
+        """Remove an item from a player's bag (user) or legion stockpile (guild)."""
+        qty = max(1, min(qty, 100))
+        material, weapon = await self._resolve_item(item)
+        if isinstance(target, discord.Guild):
+            legion = await self.legions.get(target.id)
+            if legion is None:
+                await ctx.send("No legion for that guild id.")
+                return
+            if material is None:
+                await ctx.send("Legion stockpiles hold materials only.")
+                return
+            total = await self.legions.stock_remove(legion, material, qty)
+            if total is None:
+                await ctx.send(
+                    f"❌ {legion.name} stockpile short of {material.name}×{qty}."
+                )
+            else:
+                await ctx.send(
+                    f"✅ {legion.name} stockpile −{material.name}×{qty} (now {total:,})"
+                )
+            return
+        player = await self.players.get(target.id)
+        if player is None:
+            await ctx.send("That user hasn't onboarded yet.")
+            return
+        if material is not None:
+            if await self.inventory.consume(player, {material.id: qty}):
+                await ctx.send(f"✅ {player.username} −{material.name}×{qty}")
+            else:
+                await ctx.send(
+                    f"❌ {player.username} doesn't have {material.name}×{qty}."
+                )
+        elif weapon is not None:
+            pw = await PlayerWeapon.filter(
+                player=player, weapon=weapon, equipped_slot__isnull=True
+            ).first()
+            if pw is None:
+                await ctx.send("❌ No unequipped instance to remove (unequip first).")
+            else:
+                await pw.delete()
+                await ctx.send(f"✅ removed one {weapon.name} from {player.username}")
+        else:
+            await ctx.send(f"❌ No material or weapon named `{item}`.")
+
+    @admin_group.command(name="set")
+    @commands.is_owner()
+    async def admin_set(
+        self,
+        ctx: commands.Context,
+        target: Union[discord.User, discord.Guild],
+        field: str,
+        *,
+        value: str | None = None,
+    ) -> None:
+        """Set a field on a player (user) or legion (guild). Omit the value to
+        READ the current one instead. Player fields include each mastery (a
+        weapon category key or a life skill: mine/garden/cook/brew)."""
+        field = field.lower()
+        if isinstance(target, discord.Guild):
+            legion = await self.legions.get(target.id)
+            if legion is None:
+                await ctx.send("No legion for that guild id.")
+                return
+            spec = self._LEGION_SET_FIELDS.get(field)
+            if spec is None:
+                await ctx.send(f"Legion fields: {', '.join(self._LEGION_SET_FIELDS)}")
+                return
+            attr, caster = spec
+            if value is None:
+                await ctx.send(f"🏰 {legion.name} · `{field}` = {getattr(legion, attr)}")
+                return
+            try:
+                parsed = caster(value)
+            except ValueError:
+                await ctx.send(f"`{field}` needs a {caster.__name__}.")
+                return
+            if attr == "name":
+                parsed = clean_legion_name(parsed)
+            setattr(legion, attr, parsed)
+            await legion.save(update_fields=[attr])
+            await ctx.send(f"✅ {legion.name}: `{field}` → {parsed}")
+            return
+
+        player = await self.players.get(target.id)
+        if player is None:
+            await ctx.send("That user hasn't onboarded yet.")
+            return
+        spec = self._PLAYER_SET_FIELDS.get(field)
+        if spec is not None:
+            attr, caster = spec
+            if value is None:
+                await ctx.send(f"🧑 {player.username} · `{field}` = {getattr(player, attr)}")
+                return
+            try:
+                parsed = caster(value)
+            except ValueError:
+                await ctx.send(f"`{field}` needs a {caster.__name__}.")
+                return
+            if attr == "username":
+                parsed = clean_player_name(parsed)
+            setattr(player, attr, parsed)
+            await player.save(update_fields=[attr])
+            await ctx.send(f"✅ {player.username}: `{field}` → {parsed}")
+            return
+        # anything else: treat the field as a mastery (weapon category / life skill)
+        await self._admin_set_mastery(ctx, player, field, value)
+
+    async def _admin_set_mastery(
+        self, ctx: commands.Context, player: Player, field: str, value: str | None
+    ) -> None:
+        """Read/set one of a player's masteries -- a weapon category (key or
+        name) or a life skill (mine/garden/cook/brew). Sets the LEVEL (exp is
+        zeroed); omit the value to read the current level."""
+        category = (
+            await WeaponCategory.get_or_none(key=field)
+            or await WeaponCategory.get_or_none(name=field)
+        )
+        life = next((t for t in LifeSkillType if t.value == field), None)
+        if category is None and life is None:
+            cats = [c.key for c in await WeaponCategory.all() if c.key]
+            skills = [t.value for t in LifeSkillType]
+            await ctx.send(
+                f"Player fields: {', '.join(self._PLAYER_SET_FIELDS)}; "
+                f"masteries: {', '.join(cats + skills)}"
+            )
+            return
+        if category is not None:
+            row = await WeaponMastery.get_or_none(player=player, category=category)
+            label = category.name
+        else:
+            row = await LifeSkillMastery.get_or_none(player=player, skill=life)
+            label = field
+        if value is None:
+            await ctx.send(
+                f"🧑 {player.username} · {label} 精通 = {row.level if row else 0}"
             )
             return
         try:
-            parsed = caster(value)
+            level = int(value)
         except ValueError:
-            await ctx.send(f"`{field}` needs a {caster.__name__}.")
+            await ctx.send("Mastery level must be an integer.")
             return
-        if field == "name":
-            parsed = clean_legion_name(parsed)
-        setattr(legion, field, parsed)
-        await legion.save(update_fields=[field])
-        await ctx.send(f"✅ {legion.guild_id}: `{field}` → {parsed}")
+        if row is not None:
+            row.level, row.exp = level, 0
+            await row.save(update_fields=["level", "exp"])
+        elif category is not None:
+            await WeaponMastery.create(
+                player=player, category=category, level=level, exp=0
+            )
+        else:
+            await LifeSkillMastery.create(
+                player=player, skill=life, level=level, exp=0
+            )
+        await ctx.send(f"✅ {player.username}: {label} 精通 → {level}")
 
-    @settings_group.command(name="patch")
+    @admin_group.command(name="freeze")
+    @commands.is_owner()
+    async def settings_freeze(
+        self, ctx: commands.Context, state: str | None = None
+    ) -> None:
+        """Maintenance freeze: block ALL commands while you force a patch.
+
+        `admin freeze on` / `off`, or bare `admin freeze` to toggle. Clears on a
+        bot restart. The graceful lead-in to `admin patch` force-apply.
+        """
+        if state is None:
+            self._frozen = not self._frozen
+        elif state.lower() in ("on", "true", "1", "freeze"):
+            self._frozen = True
+        elif state.lower() in ("off", "false", "0", "unfreeze"):
+            self._frozen = False
+        else:
+            await ctx.send("Usage: `admin freeze [on|off]`")
+            return
+        await ctx.send(
+            "🧊 **FROZEN** — all commands blocked. Force the patch, then "
+            "`admin freeze off`."
+            if self._frozen
+            else "☀️ **Unfrozen** — commands resumed."
+        )
+
+    @admin_group.command(name="patch")
     @commands.is_owner()
     async def settings_patch(self, ctx: commands.Context) -> None:
         """Game patch status & staged updates."""
@@ -2184,13 +2410,3 @@ class LegionCog(commands.Cog):
             self._patch_task.cancel()
         self._patch_task = asyncio.create_task(timer())
 
-    @settings_group.command(name="seed")
-    @commands.is_owner()
-    async def settings_seed(self, ctx: commands.Context) -> None:
-        """Bootstrap: apply the current content patch directly (day zero)."""
-        created = await self._apply_and_record()
-        await ctx.send(
-            strings.PATCH_APPLIED.format(
-                version=PATCH["version"], hash=content_hash(), created=created
-            )
-        )
