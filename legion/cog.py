@@ -1489,7 +1489,7 @@ class LegionCog(commands.Cog):
         loot_parts = []
         for material_id, qty in rolled.items():
             await self.inventory.add_material(player, materials[material_id], qty)
-            loot_parts.append(f"{qty}× {materials[material_id].name}")
+            loot_parts.append(f"{materials[material_id].name}×{qty}")
         if pts:
             await self.masteries.grant_life(player, activity.skill, pts)
 
@@ -1855,16 +1855,16 @@ class LegionCog(commands.Cog):
             if action == "give":
                 await self.inventory.add_material(player, material, qty)
                 await ctx.send(
-                    f"✅ {player.username} +{qty}× {material.name} (`{item_key}`)"
+                    f"✅ {player.username} +{material.name}(`{item_key}`)×{qty}"
                 )
             else:
                 if await self.inventory.consume(player, {material.id: qty}):
                     await ctx.send(
-                        f"✅ {player.username} −{qty}× {material.name} (`{item_key}`)"
+                        f"✅ {player.username} −{material.name}(`{item_key}`)×{qty}"
                     )
                 else:
                     await ctx.send(
-                        f"❌ {player.username} doesn't have {qty}× `{item_key}`."
+                        f"❌ {player.username} doesn't have {material.name}(`{item_key}`)×{qty}."
                     )
             return
 
