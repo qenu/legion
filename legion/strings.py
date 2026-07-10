@@ -33,6 +33,7 @@ ONBOARD_PROMPT = (
 )
 ONBOARD_WELCOME = "歡迎加入 **{legion}**，{player}！你的 **{weapon}** 已準備就緒。"
 ONBOARD_ANY_CMD = "你可以使用 `/expedition` 發起遠征，或使用 `/resource` 前往採集材料。"
+ONBOARD_DM_ONLY = "你必須在伺服器中使用此指令。"
 
 # --- legion ---
 LEGION_NOT_CONFIGURED = (

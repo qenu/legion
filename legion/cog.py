@@ -246,8 +246,13 @@ class LegionCog(commands.Cog):
             await self._send_patch_blocked(interaction)
             return None
         player = await self.players.get(interaction.user.id)
-        legion = await self._legion_for(interaction.guild)
         if player is None:
+            if interaction.guild is None:
+                await interaction.response.send_message(
+                    strings.ONBOARD_DM_ONLY, ephemeral=True
+                )
+                return None
+            legion = await self._legion_for(interaction.guild)
             starters = await Weapon.filter(
                 key__in=list(STARTER_WEAPONS), status=ContentStatus.ENABLED
             )
