@@ -29,6 +29,7 @@ from maki.cogs.legion.constants import (
     ContentStatus,
     EXPEDITION_MIN_HP_PCT,
     LOBBY_SECONDS,
+    REVIVE_MINUTES,
     STARTER_POTION_KEY,
     STARTER_WEAPONS,
     MASTERY_KIND_WEAPONS,
@@ -920,6 +921,20 @@ class LegionCog(commands.Cog):
             player, legion, equipped, self.bot.color, effective_max=eff_max
         )
         view = ProfileView(self, interaction.user.id, player)
+
+        # Death countdown: ensure_player already flushed regen (lazily reviving
+        # if due), so a still-dead player has a revive time in the future --
+        # hp_updated_at is the death stamp while dead.
+        if player.health_points <= 0:
+            died_at = player.hp_updated_at or datetime.now().astimezone()
+            revive_at = died_at + timedelta(minutes=REVIVE_MINUTES)
+            embed.add_field(
+                name=strings.DEATH_TIMER_TITLE,
+                value=strings.DEATH_TIMER_VALUE.format(
+                    revive=int(revive_at.timestamp())
+                ),
+                inline=False,
+            )
 
         # Active food buff, if any. ensure_player already flushed regen, but
         # the timestamp check guards the sub-minute window where a buff has
