@@ -9,8 +9,8 @@ apply (rows are never hard-deleted; the /patch review shows removals).
 """
 
 PATCH: dict = {
-    "version": "0.1.15",
-    "notes": "Reduce cooldown of flame_throw and flame_arrow to 3 rounds, add poison effect message, add freeze effect message, add daily supply messages, add donate not needed message.",
+    "version": "0.1.16",
+    "notes": "Patch 0.1.16: Added new materials, mobs, and recipes for Legion content.",
     "materials": [
         {"key": "iron_ore", "name": "鐵礦石", "rarity": 1,
          "description": "帶著鏽色紋路的礦石，鍛造的基礎。"},
@@ -449,6 +449,11 @@ PATCH: dict = {
                     {"material": "spider_fang", "qty": 4},
                     {"material": "thick_bark", "qty": 4},
                     {"material": "cobweb", "qty": 2}]},
+        {"key": "brew_red_potion", "name": "紅藥水", "skill": "brew",
+         "material": "red_potion", "qty": 1, "req": 2,
+         "inputs": [{"material": "cobweb", "qty": 3},
+                    {"material": "raspberry", "qty": 2},
+                    {"material": "slime_goo", "qty": 5}]},
     ],
     "upgrade_costs": [
         {"level": 2, "material": "slime_goo", "base_qty": 5},
