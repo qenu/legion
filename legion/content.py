@@ -58,7 +58,11 @@ PATCH: dict = {
             "description": "鋒利的蜘蛛牙，帶有微弱的毒性。"},
         {"key": "rabbit_porridge", "name": "兔肉粥", "kind": "food", "rarity": 2,
          "stat_bonus_type": "hp", "stat_bonus_value": 5, "duration": 30,
-            "description": "神秘的兔肉粥，非常的黏稠美味。"}
+            "description": "神秘的兔肉粥，非常的黏稠美味。"},
+        {"key": "thick_bark", "name": "厚樹皮", "rarity": 2,
+            "description": "堅硬的樹皮，可以用來製作防具。"},
+        {"key": "raspberry", "name": "樹莓", "rarity": 2,
+            "description": "酸甜的樹莓，吃起來非常爽口。"},
     ],
     "categories": [
         {"key": "sword", "name": "刀劍"},
@@ -301,6 +305,16 @@ PATCH: dict = {
                 {"material": "slime_goo", "weight": 2, "min": 1, "max": 2}]
         },
         {
+            "key": "spider", "name": "蜘蛛", "tier": 2, "rounds_limit": 6,
+            "hp": 60, "atk": 10, "def": 2, "speed": 8,
+            "skills": [
+                {"skill": "slash", "cooldown": 1, "hp_threshold": 1.0}],
+            "passives": [],
+            "drops": [
+                {"material": "cobweb", "weight": 2, "min": 1, "max": 2},
+                {"material": "thick_bark", "weight": 1, "min": 1, "max": 1}]
+        },
+        {
             "key": "cave_spider", "name": "洞穴蜘蛛", "tier": 2, "rounds_limit": 6,
             "hp": 70, "atk": 12, "def": 3, "speed": 10,
             "skills": [
@@ -330,6 +344,7 @@ PATCH: dict = {
          "description": "崎嶇的山脊小徑，風聲呼嘯而過，隱藏著危險的生物。",
          "pool": [{"mob": "grey_wolf", "weight": 2}, 
                   {"mob": "dire_wolf", "weight": 1}, 
+                  {"mob": "spider", "weight": 2},
                   {"mob": "flame_lizard", "weight": 2},
                   {"mob": "giant_flame_lizard", "weight": 1}]},
         {"key": "sunken_quarry", "name": "沉沒採石場", "danger": 5, "min_legion_level": 4,
@@ -352,6 +367,11 @@ PATCH: dict = {
          "description": "深不見底的礦道，曾經是個老舊的井口。",
          "yields": [{"material": "iron_ore", "weight": 3, "min": 2, "max": 3},
                     {"material": "golem_core", "weight": 1, "min": 1, "max": 1}]},
+        {"key": "ancient_ruins", "name": "古代遺跡", "skill": "garden", "min_legion_level": 3,
+         "description": "古老的遺跡，似乎有些神秘的力量在其中。",
+         "yields": [{"material": "thick_bark", "weight": 2, "min": 1, "max": 2},
+                    {"material": "raspberry", "weight": 2, "min": 1, "max": 2},
+                    {"material": "molt_skin", "weight": 1, "min": 1, "max": 1}]}
     ],
     "recipes": [
         {"key": "forge_iron_sword", "name": "鐵劍", 
@@ -427,7 +447,7 @@ PATCH: dict = {
          "weapon": "flame_lizard_bow",
          "inputs": [{"material": "flame_lizard_core", "qty": 2},
                     {"material": "spider_fang", "qty": 4},
-                    {"material": "lizard_tail", "qty": 4},
+                    {"material": "thick_bark", "qty": 4},
                     {"material": "cobweb", "qty": 2}]},
     ],
     "upgrade_costs": [
@@ -436,9 +456,12 @@ PATCH: dict = {
         {"level": 3, "material": "wolf_fang", "base_qty": 5},
         {"level": 3, "material": "rough_stone", "base_qty": 10},
         {"level": 3, "material": "rabbit_foot", "base_qty": 3},
-        {"level": 4, "material": "dark_golem_core", "base_qty": 5},
+        {"level": 4, "material": "thick_bark", "base_qty": 5},
         {"level": 4, "material": "flame_lizard_core", "base_qty": 4},
         {"level": 4, "material": "golem_core", "base_qty": 10},
+        #{"level": 5, "material": "dark_golem_core", "base_qty": 5},
+        #{"level": 5, "material": "spider_fang", "base_qty": 6},
+        #{"level": 5, "material": "molt_skin", "base_qty": 10},
     ],
     # Daily supply (once/day button on /legion). Grouped by contribution
     # threshold like upgrade_costs are by level: a player receives EVERY entry
