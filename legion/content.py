@@ -9,8 +9,8 @@ apply (rows are never hard-deleted; the /patch review shows removals).
 """
 
 PATCH: dict = {
-    "version": "0.1.14",
-    "notes": "Spring rolls correctly give HP now, and daily supply rewards have been added.",
+    "version": "0.1.15",
+    "notes": "Reduce cooldown of flame_throw and flame_arrow to 3 rounds, add poison effect message, add freeze effect message, add daily supply messages, add donate not needed message.",
     "materials": [
         {"key": "iron_ore", "name": "鐵礦石", "rarity": 1,
          "description": "帶著鏽色紋路的礦石，鍛造的基礎。"},
@@ -70,18 +70,18 @@ PATCH: dict = {
         {"key": "slash", "name": "斬擊", "effect_type": "damage", "effect_value": "{atk} + 6", "cooldown": 1},
         {"key": "cleave", "name": "劈砍", "effect_type": "damage", "effect_value": "{atk} + 12", "cooldown": 3},
         {"key": "piercing_shot", "name": "穿刺射擊", "effect_type": "damage", "effect_value": "{atk} + 12", "cooldown": 1},
-        {"key": "barbed_arrow", "name": "帶刺箭", "effect_type": "bleed", "effect_value": "{atk}*30%", "cooldown": 4},
+        {"key": "barbed_arrow", "name": "帶刺箭", "effect_type": "bleed", "effect_value": "{atk}*30%", "cooldown": 3},
         {"key": "spark", "name": "火花", "effect_type": "damage", "effect_value": "{atk} + 6", "cooldown": 1},
         {"key": "mend", "name": "治癒", "effect_type": "heal", "effect_value": "{atk} + 5", "cooldown": 3},
-        {"key": "dazing_blow", "name": "眩暈打擊", "effect_type": "stun", "effect_value": 1, "cooldown": 5},
+        {"key": "dazing_blow", "name": "眩暈打擊", "effect_type": "stun", "effect_value": 1, "cooldown": 3},
         {"key": "smash", "name": "粉碎", "effect_type": "damage", "effect_value": "{atk} + 8", "cooldown": 2},
         {"key": "rending_howl", "name": "撕裂咆哮", "effect_type": "bleed", "effect_value": "{atk}*30%", "cooldown": 3},
         {"key": "quake", "name": "震攝", "effect_type": "damage", "effect_value": "{atk} + 15", "cooldown": 3},
         {"key": "rock_throw", "name": "投擲碎石", "effect_type": "damage", "effect_value": "{atk} + 10", "cooldown": 2},
-        {"key": "flame_throw", "name": "火焰噴射", "effect_type": "damage", "effect_value": "{atk} + 20", "cooldown": 4},
+        {"key": "flame_throw", "name": "火焰噴射", "effect_type": "damage", "effect_value": "{atk} + 20", "cooldown": 3},
         {"key": "poison_fang", "name": "毒牙", "effect_type": "poison", "effect_value": "{atk}*20%", "cooldown": 3},
-        {"key": "focus_shot", "name": "專注射擊", "effect_type": "damage", "effect_value": "{atk} + 15", "cooldown": 2},
-        {"key": "flame_arrow", "name": "火焰箭", "effect_type": "burn", "effect_value": "{atk}*20%", "cooldown": 4},
+        {"key": "focus_shot", "name": "專注射擊", "effect_type": "damage", "effect_value": "{atk} + 15", "cooldown": 1},
+        {"key": "flame_arrow", "name": "火焰箭", "effect_type": "burn", "effect_value": "{atk}*20%", "cooldown": 3},
     ],
     "passive_skills": [
         {"key": "grit", "name": "堅毅", "stat_bonus_type": "hp", "stat_bonus_value": 20},
