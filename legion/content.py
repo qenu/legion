@@ -9,8 +9,8 @@ apply (rows are never hard-deleted; the /patch review shows removals).
 """
 
 PATCH: dict = {
-    "version": "0.1.12",
-    "notes": "Add new daily supply system, with a once/day button on /legion. Players can claim a daily supply of materials based on their contribution points. Added new materials and updated some existing ones.",
+    "version": "0.1.13",
+    "notes": "Patch 0.1.13: Daily supply rewards, new mobs, and new weapons.",
     "materials": [
         {"key": "iron_ore", "name": "鐵礦石", "rarity": 1,
          "description": "帶著鏽色紋路的礦石，鍛造的基礎。"},
@@ -444,10 +444,11 @@ PATCH: dict = {
     # threshold like upgrade_costs are by level: a player receives EVERY entry
     # at the HIGHEST threshold their contribution reaches -- not cumulative.
     "daily_reward": [
-        {"threshold": 10, "material": "slime_goo", "qty": 3},
-        {"threshold": 10, "material": "sunherb", "qty": 2},
-        {"threshold": 50, "material": "boar_hide", "qty": 2},
-        {"threshold": 50, "material": "iron_ore", "qty": 3},
-        {"threshold": 100, "material": "golem_core", "qty": 1},
+        {"threshold": 10, "material": "bitter_tonic", "qty": 1},
+        {"threshold": 10, "material": "hearty_stew", "qty": 1},
+        {"threshold": 50, "material": "bitter_tonic", "qty": 1},
+        {"threshold": 50, "material": "hearty_stew", "qty": 2},
+        {"threshold": 100, "material": "bitter_tonic", "qty": 2},
+        {"threshold": 100, "material": "spring_roll", "qty": 1},
     ],
 }
