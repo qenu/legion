@@ -9,8 +9,8 @@ apply (rows are never hard-deleted; the /patch review shows removals).
 """
 
 PATCH: dict = {
-    "version": "0.1.13",
-    "notes": "Patch 0.1.13: Daily supply rewards, new mobs, and new weapons.",
+    "version": "0.1.14",
+    "notes": "Spring rolls correctly give HP now, and daily supply rewards have been added.",
     "materials": [
         {"key": "iron_ore", "name": "鐵礦石", "rarity": 1,
          "description": "帶著鏽色紋路的礦石，鍛造的基礎。"},
@@ -46,7 +46,7 @@ PATCH: dict = {
         {"key": "molt_skin", "name": "脫落的皮", "rarity": 2,
          "description": "脫落的皮，感覺有點噁心。"},
         {"key": "spring_roll", "name": "春捲", "kind": "food", "rarity": 2,
-         "stat_bonus_type": "speed", "stat_bonus_value": 2, "duration": 30,
+         "stat_bonus_type": "hp", "stat_bonus_value": 3, "duration": 30,
          "description": "半透明的外皮，裡面包著各種蔬菜，吃起來清爽。"},
         {"key": "flame_lizard_core", "name": "火蜥蜴核心", "rarity": 3,
             "description": "仍在微微發燙的核心，蘊含古老的火焰力量。"},
