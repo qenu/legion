@@ -639,3 +639,17 @@ class LegionUpgradeCost(Model):
 
     def __str__(self) -> str:
         return f"LegionUpgradeCost(Level: {self.level}, Material: {self.material.name}, BaseQty: {self.base_qty})"
+
+
+class SystemFlag(Model):
+    """A persisted global on/off switch, keyed by name -- e.g. the maintenance
+    freeze, which must survive the restart used to apply a patch."""
+
+    key     = fields.CharField(max_length=64, unique=True)
+    enabled = fields.BooleanField(default=False)
+
+    class Meta:  # type: ignore
+        table = "system_flags"
+
+    def __str__(self) -> str:
+        return f"SystemFlag({self.key}={self.enabled})"

@@ -61,6 +61,7 @@ from maki.cogs.legion.model.model import (
     PlayerWeapon,
     Recipe,
     RecipeMaterial,
+    SystemFlag,
     Weapon,
     WeaponCategory,
     WeaponMastery,
@@ -789,3 +790,15 @@ class DungeonRepo:
             status=DungeonStatus.VOIDED,
             ended_at=datetime.now().astimezone(),
         )
+
+
+class SystemRepo:
+    """Persisted global on/off flags (SystemFlag rows), keyed by name. Used for
+    the maintenance freeze, which must outlive the restart that applies a patch."""
+
+    async def get_flag(self, key: str) -> bool:
+        row = await SystemFlag.get_or_none(key=key)
+        return bool(row and row.enabled)
+
+    async def set_flag(self, key: str, enabled: bool) -> None:
+        await SystemFlag.update_or_create(key=key, defaults={"enabled": enabled})

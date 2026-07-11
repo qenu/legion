@@ -73,7 +73,10 @@ from maki.cogs.legion.model.repository import (
     MasteryRepo,
     PatchRepo,
     PlayerRepo,
+    SystemRepo,
 )
+
+FREEZE_FLAG_KEY = "maintenance_freeze"
 from maki.cogs.legion.seeds import (
     apply_patch,
     content_hash,
@@ -137,6 +140,7 @@ class LegionCog(commands.Cog):
             self.dungeons, self.masteries, self.inventory, self.legions
         )
         self.patches = PatchRepo()
+        self.system = SystemRepo()
         self._lobby_tasks: dict[int, asyncio.Task] = {}   # legion_id -> timer
         self._replay_tasks: set[asyncio.Task] = set()
         self._pending_patch: GamePatch | None = None
@@ -144,7 +148,8 @@ class LegionCog(commands.Cog):
         # Manual maintenance freeze: an owner toggle (`admin freeze on`) that
         # blocks ALL commands, independent of the scheduled-patch phases. Meant
         # as the graceful lead-in to a force patch -- flip it on, let in-flight
-        # actions drain, force-apply, flip it off. In-memory: a restart clears it.
+        # actions drain, force-apply, flip it off. Persisted (SystemFlag) so it
+        # SURVIVES the restart used to apply a patch; loaded in cog_load.
         self._frozen = False
         # Right-click a member -> Apps -> 使用道具: consumables on OTHERS,
         # including the potion revive. Context menus can't live in cogs as
@@ -163,6 +168,8 @@ class LegionCog(commands.Cog):
         voided = await self.dungeons.void_all_active()
         if voided:
             log.info("Voided {} orphaned expedition lobbies on boot.", voided)
+        # Restore the maintenance freeze across the restart (e.g. a force patch).
+        self._frozen = await self.system.get_flag(FREEZE_FLAG_KEY)
         # Resume a scheduled patch across restarts (or apply it if overdue).
         self._pending_patch = await self.patches.pending()
         if self._pending_patch is not None:
@@ -1351,7 +1358,7 @@ class LegionCog(commands.Cog):
             material=material.name,
             healed=healed,
             hp=recipient.health_points,
-            max_hp=recipient.max_health_points,
+            max_hp=eff_max,  # dynamic effective max, not the stored base
         )
 
     # --- use item on others (context menu) -----------------------------------------
@@ -2294,8 +2301,9 @@ class LegionCog(commands.Cog):
     ) -> None:
         """Maintenance freeze: block ALL commands while you force a patch.
 
-        `admin freeze on` / `off`, or bare `admin freeze` to toggle. Clears on a
-        bot restart. The graceful lead-in to `admin patch` force-apply.
+        `admin freeze on` / `off`, or bare `admin freeze` to toggle. Persisted,
+        so it SURVIVES a restart -- the graceful lead-in to `admin patch`
+        force-apply. Remember to `admin freeze off` once you're done.
         """
         if state is None:
             self._frozen = not self._frozen
@@ -2306,6 +2314,7 @@ class LegionCog(commands.Cog):
         else:
             await ctx.send("Usage: `admin freeze [on|off]`")
             return
+        await self.system.set_flag(FREEZE_FLAG_KEY, self._frozen)
         await ctx.send(
             "🧊 **FROZEN** — all commands blocked. Force the patch, then "
             "`admin freeze off`."

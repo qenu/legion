@@ -23,6 +23,7 @@ from maki.cogs.legion.model.model import (
     Recipe,
     RecipeMaterial,
     SiteYield,
+    SystemFlag,
     Weapon,
     WeaponActiveSkill,
     WeaponCategory,
@@ -37,6 +38,7 @@ from maki.cogs.legion.model.repository import (
     MasteryRepo,
     PatchRepo,
     PlayerRepo,
+    SystemRepo,
 )
 
 __all__ = [
@@ -71,6 +73,8 @@ __all__ = [
     "Recipe",
     "RecipeMaterial",
     "SiteYield",
+    "SystemFlag",
+    "SystemRepo",
     "Weapon",
     "WeaponActiveSkill",
     "WeaponCategory",
