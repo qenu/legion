@@ -9,8 +9,8 @@ apply (rows are never hard-deleted; the /patch review shows removals).
 """
 
 PATCH: dict = {
-    "version": "0.1.16",
-    "notes": "Patch 0.1.16: Added new materials, mobs, and recipes for Legion content.",
+    "version": "0.1.17",
+    "notes": "Buff shield passives, add daily supply, add poison/burn effects",
     "materials": [
         {"key": "iron_ore", "name": "鐵礦石", "rarity": 1,
          "description": "帶著鏽色紋路的礦石，鍛造的基礎。"},
@@ -73,6 +73,7 @@ PATCH: dict = {
         {"key": "staff", "name": "法器"},
         {"key": "shield", "name": "盾牌"},
     ],
+    # effect types: damage, heal, bleed, poison, burn, stun
     "active_skills": [
         {"key": "slash", "name": "斬擊", "effect_type": "damage", "effect_value": "{atk} + 6", "cooldown": 1},
         {"key": "cleave", "name": "劈砍", "effect_type": "damage", "effect_value": "{atk} + 12", "cooldown": 3},
@@ -90,6 +91,7 @@ PATCH: dict = {
         {"key": "focus_shot", "name": "專注射擊", "effect_type": "damage", "effect_value": "{atk} + 15", "cooldown": 1},
         {"key": "flame_arrow", "name": "火焰箭", "effect_type": "burn", "effect_value": "{atk}*20%", "cooldown": 3},
     ],
+    # stat_bonus_type: hp, atk, def, speed, taunt
     "passive_skills": [
         {"key": "grit", "name": "堅毅", "stat_bonus_type": "hp", "stat_bonus_value": 20},
         {"key": "fleetfoot", "name": "迅捷", "stat_bonus_type": "speed", "stat_bonus_value": 3},
@@ -99,6 +101,8 @@ PATCH: dict = {
         {"key": "haste", "name": "加速", "stat_bonus_type": "speed", "stat_bonus_value": 5},
         {"key": "provoke", "name": "挑釁", "stat_bonus_type": "taunt", "stat_bonus_value": 6},
         {"key": "exoskeletal", "name": "外骨骼", "stat_bonus_type": "def", "stat_bonus_value": 8},
+        {"key": "resilience", "name": "韌性", "stat_bonus_type": "hp", "stat_bonus_value": 40},
+        {"key": "sharpness", "name": "鋒利", "stat_bonus_type": "atk", "stat_bonus_value": 10},
     ],
     "weapons": [
         {
@@ -147,8 +151,8 @@ PATCH: dict = {
         {
             "key": "stone_shield", "name": "石盾", "category": "shield",
             "actives": [{"skill": "quake", "tier": 1, "req": 4}],
-            "passives": [{"skill": "thick_hide", "tier": 1, "req": 1},
-                         {"skill": "grit", "tier": 1, "req": 0}],
+            "passives": [{"skill": "thick_hide", "tier": 2, "req": 1},
+                         {"skill": "grit", "tier": 3, "req": 0}],
             "main_weapon": False,
         },
         {
@@ -185,6 +189,14 @@ PATCH: dict = {
             "passives": [{"skill": "fleetfoot", "tier": 2, "req": 2},
                         {"skill": "focus", "tier": 2, "req": 3},
                         {"skill": "haste", "tier": 1, "req": 4}],
+        },
+        {
+            "key": "forged_shield", "name": "鍛造盾牌", "category": "shield",
+            "actives": [],
+            "passives": [{"skill": "thick_hide", "tier": 2, "req": 2},
+                        {"skill": "grit", "tier": 2, "req": 3},
+                        {"skill": "provoke", "tier": 1, "req": 3}],
+            "main_weapon": False,
         },
     ],
     "mobs": [
