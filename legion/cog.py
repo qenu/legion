@@ -20,6 +20,7 @@ from maki.core import Maki
 from maki.cogs.legion import render, strings
 from maki.cogs.legion.calculator import (
     gather_payout_chunks,
+    mastery_erosion_pts,
     mastery_level_cost,
     roll_drops,
     roll_mutations,
@@ -284,6 +285,15 @@ class LegionCog(commands.Cog):
             own_level = own.level
         eff_max = await effective_max_hp(player, own_level)
         await self.players.apply_regen(player, own_level, eff_max)
+        # Inactivity decay BEFORE bumping the activity stamp: erode above-cap
+        # mastery for the gap since last seen, then reset the bookmark.
+        if player.last_active_at is not None:
+            inactive = (
+                datetime.now().astimezone() - player.last_active_at
+            ).total_seconds()
+            pts = mastery_erosion_pts(inactive)
+            if pts:
+                await self.masteries.erode(player, pts)
         await self.players.touch_active(player)
         return player
 
@@ -781,12 +791,17 @@ class LegionCog(commands.Cog):
                 strings.DONATE_MEMBERS_ONLY, ephemeral=True
             )
             return
-        stacks = await PlayerMaterial.filter(
-            player=player, quantity__gt=0
-        ).prefetch_related("material")
         sheet = await self.legions.upgrade_sheet(legion)
         sheet_map = {mat.id: (need, have) for mat, need, have in sheet}
-        await self._edit_tracked(interaction, 
+        # Only upgrade-requirement materials are donatable; junk can't be dumped.
+        stacks = [
+            s
+            for s in await PlayerMaterial.filter(
+                player=player, quantity__gt=0
+            ).prefetch_related("material")
+            if s.material_id in sheet_map
+        ]
+        await self._edit_tracked(interaction,
             content=note,
             embed=render.donate_embed(legion, stacks, sheet_map, self.bot.color),
             view=DonateView(
@@ -808,15 +823,22 @@ class LegionCog(commands.Cog):
         if not await self.ensure_alive(interaction, player):
             return
         material = await Material.get_or_none(id=material_id)
-        result = (
-            await self.legions.donate(player, legion, material, qty)
-            if material is not None
-            else None
+        sheet = await self.legions.upgrade_sheet(legion)
+        sheet_map = {mat.id: (need, have) for mat, need, have in sheet}
+        if material is None or material.id not in sheet_map:
+            # Authoritative gate: only upgrade-requirement mats earn/donate.
+            await self.show_donate(
+                interaction, legion,
+                note=strings.LEGION_DONATE_NOT_NEEDED.format(
+                    material=material.name if material else "?"
+                ),
+            )
+            return
+        result = await self.legions.donate(
+            player, legion, material, qty, need=sheet_map[material.id][0]
         )
         if result is None:
-            note = strings.LEGION_DONATE_SHORT.format(
-                material=material.name if material else "?"
-            )
+            note = strings.LEGION_DONATE_SHORT.format(material=material.name)
         else:
             accepted, contri = result
             if accepted == 0:

@@ -8,6 +8,11 @@ from enum import IntEnum, StrEnum
 MASTERY_SOFT_CAP = 5
 MASTERY_HARD_CAP = 7
 MASTERY_EXP_BASE = 60  # exp to go from level n-1 to n costs n * MASTERY_EXP_BASE
+# Inactivity decay: above-soft-cap mastery erodes while a player is away. No
+# erosion for the first grace window, then this many exp/day (lazily applied
+# when the player is next seen), never below the soft-cap floor.
+MASTERY_EROSION_GRACE_HOURS = 24
+MASTERY_EROSION_PER_DAY     = 60
 
 # Settlement: mastery pts awarded per dungeon run.
 MASTERY_PTS_JOIN       = 1

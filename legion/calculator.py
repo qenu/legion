@@ -17,6 +17,8 @@ from maki.cogs.legion.constants import (
     GATHER_MASTERY_MAX_PER_AFK,
     LEGION_EXP_BASE,
     LEGION_UPGRADE_QTY_PER_MEMBER,
+    MASTERY_EROSION_GRACE_HOURS,
+    MASTERY_EROSION_PER_DAY,
     MASTERY_EXP_BASE,
     MASTERY_HARD_CAP,
     MASTERY_SOFT_CAP,
@@ -97,6 +99,17 @@ def apply_mastery_gain(level: int, exp: int, pts: int) -> tuple[int, int, int]:
     if level >= MASTERY_HARD_CAP:
         exp = 0
     return level, exp, gained
+
+
+def mastery_erosion_pts(inactive_seconds: float) -> int:
+    """Exp to erode from each above-soft-cap mastery after a stretch of
+    inactivity: nothing within the grace window, then MASTERY_EROSION_PER_DAY
+    per day beyond it. Pure/lazy -- the caller passes elapsed seconds."""
+    grace = MASTERY_EROSION_GRACE_HOURS * 3600
+    if inactive_seconds <= grace:
+        return 0
+    days = (inactive_seconds - grace) / 86400
+    return int(days * MASTERY_EROSION_PER_DAY)
 
 
 def apply_mastery_drain(level: int, exp: int, pts: int) -> tuple[int, int, int, int]:

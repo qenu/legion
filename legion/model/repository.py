@@ -8,7 +8,7 @@ in its ``__init__``.
 import random
 from datetime import datetime, timedelta
 
-from tortoise.expressions import F, Q
+from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
 
 from maki.cogs.legion.calculator import (
@@ -207,13 +207,16 @@ class LegionRepo:
     # -- stockpile & upgrades --
 
     async def donate(
-        self, player: Player, legion: Legion, material: Material, qty: int
+        self, player: Player, legion: Legion, material: Material, qty: int,
+        need: int = 0,
     ) -> tuple[int, int] | None:
         """Move up to ``qty`` mats from a player's inventory into the legion
-        stockpile, which is capped at MAX_ITEM_STACK. Returns
-        ``(accepted_qty, contribution)``; ``accepted_qty`` is below ``qty`` when
-        the stockpile fills up (the overflow stays in the donor's bag), and 0
-        when it is already full. Returns None if the player lacks the mats."""
+        stockpile (capped at MAX_ITEM_STACK). Contribution is paid at full rate
+        for the units that fill the requirement (up to ``need`` minus what's
+        already stockpiled) and at HALF rate (rounded down) for over-donation
+        past it. Returns ``(accepted_qty, contribution)`` -- accepted is below
+        ``qty`` when the stockpile fills up (overflow stays in the bag), 0 when
+        already full. Returns None if the player lacks the mats."""
         async with in_transaction():
             stack = (
                 await PlayerMaterial.filter(player=player, material=material)
@@ -243,7 +246,12 @@ class LegionRepo:
                 pile.quantity += accepted
                 await pile.save(update_fields=["quantity"])
 
-            contri = accepted * material.rarity * CONTRI_PER_MAT_RARITY
+            # Full value up to the remaining requirement, half for the overflow.
+            remaining = max(0, need - current)
+            full = min(accepted, remaining)
+            over = accepted - full
+            per_unit = material.rarity * CONTRI_PER_MAT_RARITY
+            contri = full * per_unit + (over * per_unit) // 2
             player.contribution += contri
             await player.save(update_fields=["contribution"])
             return (accepted, contri)
@@ -323,10 +331,10 @@ class LegionRepo:
             if any(have < need for _, need, have in sheet):
                 return False
 
-            for material, need, _ in sheet:
-                await LegionStockpile.filter(
-                    legion=locked, material=material
-                ).update(quantity=F("quantity") - need)
+            # Upgrading consumes the WHOLE stockpile -- requirement mats and any
+            # over-donated surplus alike are wiped; you start the next level
+            # from an empty warehouse.
+            await LegionStockpile.filter(legion=locked).delete()
             # locked.exp -= legion_level_cost(locked.level + 1)
             locked.exp = 0  # reset exp to 0 on upgrade
             locked.level += 1
@@ -505,6 +513,20 @@ class MasteryRepo:
     the soft-cap floor. The returned ``MasteryGrant`` carries everything the
     feedback log needs.
     """
+
+    async def erode(self, player: Player, pts: int) -> None:
+        """Inactivity decay: shave ``pts`` exp off EVERY above-soft-cap mastery
+        (weapon + life), never below the soft-cap floor. Lazy -- called when the
+        player is next seen. No-op below the floor."""
+        if pts <= 0:
+            return
+        for model in (WeaponMastery, LifeSkillMastery):
+            for m in await model.filter(player=player, level__gte=MASTERY_SOFT_CAP):
+                if drainable_exp(m.level, m.exp) <= 0:
+                    continue
+                m.level, m.exp, drained, _ = apply_mastery_drain(m.level, m.exp, pts)
+                if drained:
+                    await m.save(update_fields=["level", "exp"])
 
     async def total_mastery(self, player: Player) -> int:
         """Sum of ALL mastery levels (weapon + life skills): the coarse

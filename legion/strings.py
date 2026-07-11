@@ -55,6 +55,7 @@ LEGION_DONATED = "捐贈了 {material}×{qty:,} (獲得 {contri:,} 貢獻值)。
 LEGION_DONATED_CAPPED = "捐贈了 {material}×{qty:,} (獲得 {contri:,} 貢獻值)；倉庫已滿，其餘已保留。"
 LEGION_STOCKPILE_FULL = "倉庫的 {material} 已達上限，無法再捐贈。"
 LEGION_DONATE_SHORT = "{material} 數量不足。"
+LEGION_DONATE_NOT_NEEDED = "{material} 不是升級所需材料，無法捐贈。"
 MEMBERS_TITLE = "成員"
 MEMBERS_NAME_COL = "玩家名稱"
 MANAGER_TITLE = "管理員"
