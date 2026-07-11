@@ -47,6 +47,7 @@ class Player(Model):
     # (qty * rarity) and the first dungeon fight of each UTC day.
     contribution  = fields.IntField(default=0)
     last_daily_at = fields.DatetimeField(null=True)  # last daily-contri award
+    last_supply_at = fields.DatetimeField(null=True)  # last daily-supply claim
 
     # Appointed by Manage Guild members; may press legion Upgrade/settings
     # without holding Discord perms themselves.

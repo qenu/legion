@@ -346,14 +346,12 @@ class LegionView(_AuthorOnly):
             self.upgrade.disabled = True
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        # Upgrade is perm-gated, not author-gated: anyone with officer rights
-        # may press it regardless of who ran the command.
+        # These two aren't author-gated: Upgrade is perm-gated (any officer),
+        # and Daily Supply is personal (any member claims their own).
         if interaction.message is not None:
             self.message = interaction.message
-        if (
-            interaction.data
-            and interaction.data.get("custom_id") == self.upgrade.custom_id
-        ):
+        open_buttons = {self.upgrade.custom_id, self.daily_supply.custom_id}
+        if interaction.data and interaction.data.get("custom_id") in open_buttons:
             return True
         return await super().interaction_check(interaction)
 
@@ -378,8 +376,14 @@ class LegionView(_AuthorOnly):
     ) -> None:
         await self.cog.show_members(interaction, self.legion, page=0)
 
+    @discord.ui.button(label=DAILY_SUPPLY_TITLE, style=discord.ButtonStyle.success, row=1)
+    async def daily_supply(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self.cog.press_daily_supply(interaction, self.legion)
+
     @discord.ui.button(
-            label=LEGION_SETTINGS_TITLE, style=discord.ButtonStyle.secondary, 
+            label=LEGION_SETTINGS_TITLE, style=discord.ButtonStyle.secondary,
             emoji=COG_EMOJI, row=1
             )
     async def settings(

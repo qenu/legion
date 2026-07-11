@@ -7,7 +7,7 @@ orchestrates Discord I/O around them.
 
 import asyncio
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Union
 
 import discord
@@ -695,6 +695,60 @@ class LegionCog(commands.Cog):
             await interaction.response.send_message(
                 strings.LEGION_UPGRADE_SHORT, ephemeral=True
             )
+
+    async def press_daily_supply(
+        self, interaction: discord.Interaction, legion: Legion
+    ) -> None:
+        """Once-per-(UTC)-day supply claim. The player receives every reward at
+        the HIGHEST contribution threshold they've reached -- not cumulative."""
+        player = await self.players.get(interaction.user.id)
+        if player is None:
+            await self._notify(interaction, strings.LEGION_NOT_MEMBER)
+            return
+        now = datetime.now(timezone.utc)
+        if (
+            player.last_supply_at is not None
+            and player.last_supply_at.astimezone(timezone.utc).date() >= now.date()
+        ):
+            await self._notify(interaction, strings.DAILY_SUPPLY_CLAIMED)
+            return
+
+        rewards = PATCH.get("daily_reward", [])
+        thresholds = sorted({r["threshold"] for r in rewards})
+        eligible = [t for t in thresholds if t <= player.contribution]
+        if not eligible:
+            if thresholds:
+                await self._notify(
+                    interaction,
+                    strings.DAILY_SUPPLY_LOW.format(need=thresholds[0]),
+                )
+            else:
+                await self._notify(interaction, strings.DAILY_SUPPLY_NONE)
+            return
+
+        best = max(eligible)
+        granted: list[tuple[Material, int]] = []
+        for r in rewards:
+            if r["threshold"] != best:
+                continue
+            material = await Material.get_or_none(
+                key=r["material"]
+            ) or await Material.get_or_none(name=r["material"])
+            if material is None:
+                continue
+            qty = int(r.get("qty", 1))
+            await self.inventory.add_material(player, material, qty)
+            granted.append((material, qty))
+        if not granted:  # misconfigured threshold (all materials missing)
+            await self._notify(interaction, strings.DAILY_SUPPLY_NONE)
+            return
+
+        player.last_supply_at = now
+        await player.save(update_fields=["last_supply_at"])
+        mats = "、".join(f"{m.name}×{q:,}" for m, q in granted)
+        await self._notify(
+            interaction, strings.DAILY_SUPPLY_RECEIVED.format(mats=mats)
+        )
 
     async def show_members(
         self, interaction: discord.Interaction, legion: Legion, page: int

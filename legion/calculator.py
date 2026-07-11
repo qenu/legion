@@ -60,17 +60,6 @@ def get_mob_stats(mob: Mob, danger: int, player_count: int) -> dict:
         "speed" : int(mob.base_speed * danger_modifier * player_modifier_low),
     }
 
-def promote_elite_mob(mob: Mob) -> None:
-    """Elite mob stats scale off the hunting ground's DANGER rating + party size.
-    Elite mobs are stronger than regular mobs, with a chance to spawn in random grounds."""
-    base_modifier = 1.2  # Elite mobs have a base stat boost
-
-    mob.hp = int(mob.base_hp * base_modifier)
-    mob.atk = int(mob.base_atk * base_modifier)
-    mob.defense = int(mob.base_def * base_modifier)
-    mob.speed = int(mob.base_speed * base_modifier)
-    mob.tier += 1  # Increase tier for elite mobs
-
 # --- Mastery math ---------------------------------------------------------
 # Storage convention: `exp` is progress *within* the current level.
 

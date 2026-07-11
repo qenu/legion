@@ -437,7 +437,17 @@ PATCH: dict = {
         {"level": 3, "material": "rough_stone", "base_qty": 10},
         {"level": 3, "material": "rabbit_foot", "base_qty": 3},
         {"level": 4, "material": "dark_golem_core", "base_qty": 5},
-        {"level": 4, "material": "flame_lizard_core", "base_qty": 2},
+        {"level": 4, "material": "flame_lizard_core", "base_qty": 4},
         {"level": 4, "material": "golem_core", "base_qty": 10},
+    ],
+    # Daily supply (once/day button on /legion). Grouped by contribution
+    # threshold like upgrade_costs are by level: a player receives EVERY entry
+    # at the HIGHEST threshold their contribution reaches -- not cumulative.
+    "daily_reward": [
+        {"threshold": 10, "material": "slime_goo", "qty": 3},
+        {"threshold": 10, "material": "sunherb", "qty": 2},
+        {"threshold": 50, "material": "boar_hide", "qty": 2},
+        {"threshold": 50, "material": "iron_ore", "qty": 3},
+        {"threshold": 100, "material": "golem_core", "qty": 1},
     ],
 }

@@ -36,7 +36,6 @@ REPLAY_INTERVAL_SECONDS = 2  # delay between round messages in the reply chain
 # Venturing into a RANDOM ground pays an explorer's bonus on a win:
 RANDOM_GROUND_MASTERY_BONUS = 1  # extra mastery pt for every participant
 RANDOM_GROUND_DROP_ROLLS    = 2  # replaces DROP_ROLLS_PER_RUN
-RANDOM_ELITE_MOB_CHANCE = 0.1  # 10% chance to spawn a higher-tier mob than the ground's pool
 
 # Settlement presentation: players per embed page (sorted by dealt+taken
 # desc); more players -> public paginator + per-presser ephemeral my-result.

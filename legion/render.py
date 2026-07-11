@@ -291,6 +291,11 @@ def settlement_embeds(
     for page_no, page in enumerate(pages, start=1):
         embed = discord.Embed(title=title, color=color)
         embed.set_author(name=strings.SETTLE_RESULT_AUTHOR)
+        embed.description = strings.SETTLE_MOB_HP.format(
+            mob=result.mob.name,
+            hp=max(0, result.mob.current_hp),
+            max_hp=result.mob.max_hp,
+        )
         for _, header, text in page:
             embed.add_field(name=header, value=text, inline=False)
         footer = note

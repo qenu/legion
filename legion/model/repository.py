@@ -21,7 +21,6 @@ from maki.cogs.legion.calculator import (
     legion_level_cost,
     quality_from_mutations,
     upgrade_ready,
-    promote_elite_mob,
 )
 from maki.cogs.legion.constants import (
     BASE_REGEN_PER_MINUTE,
@@ -41,7 +40,6 @@ from maki.cogs.legion.constants import (
     PatchStatus,
     WeaponQuality,
     WeaponSlot,
-    RANDOM_ELITE_MOB_CHANCE,
 )
 from maki.cogs.legion.model.model import (
     DungeonInstance,
@@ -686,8 +684,6 @@ class DungeonRepo:
             return None
         rng_ = rng or random
         entry = rng_.choices(pool, weights=[e.weight for e in pool], k=1)[0]
-        if rng_.random() < RANDOM_ELITE_MOB_CHANCE: # 10% chance for higher stats
-            promote_elite_mob(entry.mob)
         return entry.mob
 
     # -- lifecycle --

@@ -207,6 +207,10 @@ def validate_patch(patch: dict | None = None) -> list[str]:
         check("upgrade_costs", f"level {c.get('level')}", "material",
               c.get("material", ""), materials)
 
+    for r in p.get("daily_reward", []):
+        check("daily_reward", f"threshold {r.get('threshold')}", "material",
+              r.get("material", ""), materials)
+
     weapon_entries = {w["key"]: w for w in p.get("weapons", []) if w.get("key")}
     for starter in STARTER_WEAPONS:
         if starter not in weapons:
