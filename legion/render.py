@@ -200,37 +200,46 @@ def round_embed(
     return embed
 
 
+def _signed_delta(value: int) -> str:
+    """Pre-signed mastery delta: ``+6`` for gains, ``−5`` (U+2212) for losses."""
+    return f"+{value:,}" if value > 0 else f"−{abs(value):,}"
+
+
 def _settlement_field(line, result: SimulationResult) -> tuple[str, str, int]:
     """One player's settlement block. Returns ``(header, text, sort_key)``
     where sort_key = damage dealt + taken (page ordering)."""
-    grant = line.grant
-    gained_category = grant.category if grant and grant.category else ""
-    parts = [
-        strings.SETTLE_MASTERY_LINE.format(
-            pts=line.mastery_pts, category=gained_category
+    # Combine main + off-hand gains and the zero-sum drains into ONE net
+    # change per weapon category, then list them positives-first (high->low)
+    # and negatives after (low->high).
+    deltas: dict[str, int] = {}
+    relocks: dict[str, int] = {}
+    for g in (line.grant, line.grant_sub):
+        if g is None:
+            continue
+        if g.category:
+            deltas[g.category] = deltas.get(g.category, 0) + g.pts
+        if g.drained_pts and g.drained_from:
+            deltas[g.drained_from] = deltas.get(g.drained_from, 0) - g.drained_pts
+            if g.levels_lost:
+                relocks[g.drained_from] = relocks.get(g.drained_from, 0) + g.levels_lost
+    ordered = sorted(
+        ((c, v) for c, v in deltas.items() if v != 0),
+        key=lambda cv: (cv[1] < 0, -cv[1] if cv[1] >= 0 else cv[1]),
+    )
+    parts = []
+    for category, value in ordered:
+        text = strings.SETTLE_MASTERY_NET.format(
+            category=category, delta=_signed_delta(value)
         )
-    ]
-    # Off-hand mastery (reduced, granted before the main hand).
-    if line.grant_sub:
-        parts.append(
-            strings.SETTLE_MASTERY_SUB_LINE.format(
-                pts=line.grant_sub.pts, category=line.grant_sub.category
+        if value < 0 and category in relocks:
+            text += strings.SETTLE_RELOCK_LINE.format(
+                category=category, levels=relocks[category]
             )
-        )
+        parts.append(text)
     if line.top_damage:
         parts.append(strings.SETTLE_TOP_DAMAGE)
     if line.top_tank:
         parts.append(strings.SETTLE_TOP_TANK)
-    for g in (line.grant, line.grant_sub):
-        if g and g.drained_pts:
-            drain = strings.SETTLE_DRAIN_LINE.format(
-                category=g.drained_from, drained_pts=g.drained_pts
-            )
-            if g.levels_lost:
-                drain += strings.SETTLE_RELOCK_LINE.format(
-                    category=g.drained_from, levels=g.levels_lost
-                )
-            parts.append(drain)
     if line.drops:
         parts.append(
             strings.SETTLE_DROP + ": " + ", ".join(f"{mat.name}{strings.TIMES_EMOJI}{qty}" for mat, qty in line.drops)

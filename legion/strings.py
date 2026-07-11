@@ -132,6 +132,11 @@ HUNTING_GROUND_NO_INTEL = "尚無情報。"
 HUNTING_GROUND_MOB_LINE = "**{name}** (T{tier}) — {pct}%"
 HUNTING_FOOTER_TOOLTIP = "使用 [/{command}] 來發起遠征。"
 
+CAPTCHA_PROMPT = "🤖 驗證：請點擊數字 **{answer}**"
+CAPTCHA_FAILED = "❌ 驗證失敗，暫時無法發起遠征。<t:{until}:R> 後再試。"
+CAPTCHA_LOCKED = "⏳ 驗證失敗鎖定中，<t:{until}:R> 後再試。"
+CAPTCHA_BLACKLISTED = "🚫 你已因多次驗證失敗被暫時封鎖，無法發起遠征。"
+
 HUNTING_GROUND_GONE = "找不到指定的狩獵地區。"
 HUNTING_MOB_GONE = "找不到指定的怪物。"
 HUNTING_EXPEDITION_OVER = "遠征已結束。"
@@ -185,9 +190,7 @@ COMBAT_ROUND_EMPTY = "沒有任何事件發生。"
 
 # --- settlement log ---
 SETTLE_OUTSIDER_TAG = "不在從屬的兵團中"
-SETTLE_MASTERY_LINE = "{category}精通 +{pts:,}"
-SETTLE_MASTERY_SUB_LINE = "副手{category}精通 +{pts:,}"
-SETTLE_DRAIN_LINE = "{category}精通 −{drained_pts:,}"
+SETTLE_MASTERY_NET = "{category}精通 {delta}"  # delta pre-signed, e.g. "+6" / "−5"
 SETTLE_RELOCK_LINE = " ({category}精通下降 {levels:,} 級)"
 SETTLE_TOP_DAMAGE = "最高傷害輸出"
 SETTLE_TOP_TANK = "最高承受傷害"

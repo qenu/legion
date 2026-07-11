@@ -42,6 +42,20 @@ REPLAY_INTERVAL_SECONDS = 2  # delay between round messages in the reply chain
 RANDOM_GROUND_MASTERY_BONUS = 1  # extra mastery pt for every participant
 RANDOM_GROUND_DROP_ROLLS    = 2  # replaces DROP_ROLLS_PER_RUN
 
+# Anti-script captcha on /expedition. Heuristic target: robotically REGULAR
+# timing -- if consecutive gaps between expeditions match within a tolerance
+# enough times in a row, a button test fires. A wrong answer soft-locks the
+# player; the lockout DOUBLES each consecutive fail, and after any lockout the
+# next attempt is force-tested until a correct answer clears the streak.
+CAPTCHA_INTERVAL_TOLERANCE = 5      # seconds: gaps within this count as "regular"
+CAPTCHA_STREAK_TRIGGER     = 3      # this many regular gaps in a row -> a test
+CAPTCHA_BUTTONS            = 5      # choices shown (exactly one correct)
+CAPTCHA_TIMEOUT_SECONDS    = 60     # the view's own timeout
+CAPTCHA_LOCKOUT_BASE       = 60     # first lockout (seconds); doubles per fail
+# Once the doubling lockout would reach this, stop escalating and just
+# blacklist the user (in-memory cache, cleared on restart) instead.
+CAPTCHA_BLACKLIST_AT_SECONDS = 3600  # 60 min
+
 # Settlement presentation: players per embed page (sorted by dealt+taken
 # desc); more players -> public paginator + per-presser ephemeral my-result.
 SETTLEMENT_PLAYERS_PER_PAGE = 3

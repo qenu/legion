@@ -7,6 +7,7 @@ orchestrates Discord I/O around them.
 
 import asyncio
 import random
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Union
 
@@ -26,6 +27,11 @@ from maki.cogs.legion.calculator import (
     roll_mutations,
 )
 from maki.cogs.legion.constants import (
+    CAPTCHA_BLACKLIST_AT_SECONDS,
+    CAPTCHA_BUTTONS,
+    CAPTCHA_INTERVAL_TOLERANCE,
+    CAPTCHA_LOCKOUT_BASE,
+    CAPTCHA_STREAK_TRIGGER,
     CRAFT_MASTERY_PTS,
     MASTERY_HARD_CAP,
     ContentStatus,
@@ -77,6 +83,17 @@ from maki.cogs.legion.model.repository import (
 )
 
 FREEZE_FLAG_KEY = "maintenance_freeze"
+
+
+@dataclass
+class _CaptchaState:
+    """Per-user anti-script state, kept in memory only (cleared on restart)."""
+
+    last_at: datetime | None = None   # last expedition attempt
+    last_interval: int = 0            # previous gap, seconds
+    streak: int = 0                   # regular-gap run length
+    fails: int = 0                    # consecutive test failures
+    locked_until: datetime | None = None  # soft-lockout expiry
 from maki.cogs.legion.seeds import (
     apply_patch,
     content_hash,
@@ -98,6 +115,7 @@ from maki.cogs.legion.utils import (
     patch_timeline,
 )
 from maki.cogs.legion.views import (
+    CaptchaView,
     CraftConfirmView,
     CraftHomeView,
     CraftSurfaceView,
@@ -151,6 +169,10 @@ class LegionCog(commands.Cog):
         # actions drain, force-apply, flip it off. Persisted (SystemFlag) so it
         # SURVIVES the restart used to apply a patch; loaded in cog_load.
         self._frozen = False
+        # Anti-script captcha retry state, keyed by discord_id. In-memory only
+        # (a restart clears it; the timing heuristic re-catches persistent bots).
+        # Escalation past the ceiling hands off to the bot-wide core blacklist.
+        self._captcha: dict[int, _CaptchaState] = {}
         # Right-click a member -> Apps -> 使用道具: consumables on OTHERS,
         # including the potion revive. Context menus can't live in cogs as
         # decorated methods, so it's built here and (un)registered in
@@ -418,7 +440,95 @@ class LegionCog(commands.Cog):
                 strings.HUNTING_EXPEDITION_BUSY_SHORT, ephemeral=True
             )
             return
+        if not await self.ensure_captcha(interaction, player):
+            return  # locked out, or a verification test was shown
         await self.show_ground_list(interaction)
+
+    # --- anti-script captcha -------------------------------------------------
+
+    def _captcha_should_test(self, st: "_CaptchaState", now: datetime) -> bool:
+        """Update the timing heuristic and report whether to challenge. Robotic
+        REGULARITY is the tell: gaps between expeditions matching within
+        CAPTCHA_INTERVAL_TOLERANCE, CAPTCHA_STREAK_TRIGGER times running."""
+        triggered = False
+        if st.last_at is not None:
+            interval = int((now - st.last_at).total_seconds())
+            if (
+                st.last_interval > 0
+                and abs(interval - st.last_interval) <= CAPTCHA_INTERVAL_TOLERANCE
+            ):
+                st.streak += 1
+            else:
+                st.streak = 0
+            st.last_interval = interval
+            triggered = st.streak >= CAPTCHA_STREAK_TRIGGER
+        st.last_at = now
+        return triggered
+
+    async def ensure_captcha(
+        self, interaction: discord.Interaction, player: Player
+    ) -> bool:
+        """Gate the expedition. Returns True to proceed; False if the user is
+        blacklisted/locked out or a test was shown (its outcome resumes)."""
+        uid = interaction.user.id
+        if uid in self.bot.blacklist:  # bot-wide core blacklist
+            await self._notify(interaction, strings.CAPTCHA_BLACKLISTED)
+            return False
+        now = datetime.now(timezone.utc)
+        st = self._captcha.setdefault(uid, _CaptchaState())
+        if st.locked_until and now < st.locked_until:
+            await self._notify(
+                interaction,
+                strings.CAPTCHA_LOCKED.format(until=int(st.locked_until.timestamp())),
+            )
+            return False
+        # A fail streak (post-lockout) force-tests until a pass clears it.
+        if not (st.fails > 0 or self._captcha_should_test(st, now)):
+            return True
+        answer = random.randint(1, 9)
+        others = random.sample(
+            [n for n in range(1, 10) if n != answer], CAPTCHA_BUTTONS - 1
+        )
+        choices = others + [answer]
+        random.shuffle(choices)
+        view = CaptchaView(self, uid, player, answer, choices)
+        await interaction.response.send_message(
+            strings.CAPTCHA_PROMPT.format(answer=answer), view=view, ephemeral=True
+        )
+        view.message = await interaction.original_response()
+        return False
+
+    async def captcha_passed(
+        self, interaction: discord.Interaction, player: Player
+    ) -> None:
+        """Correct answer: wipe the retry state and continue into the ground list."""
+        self._captcha.pop(interaction.user.id, None)
+        await self.show_ground_list(interaction, edit=True)
+
+    async def captcha_failed(
+        self, interaction: discord.Interaction, player: Player
+    ) -> None:
+        """Wrong answer: soft-lock, doubling the window each consecutive fail --
+        until it would reach the ceiling, at which point hand off to the
+        bot-wide core blacklist."""
+        uid = interaction.user.id
+        st = self._captcha.setdefault(uid, _CaptchaState())
+        secs = CAPTCHA_LOCKOUT_BASE * (2 ** st.fails)
+        if secs >= CAPTCHA_BLACKLIST_AT_SECONDS:
+            await self.bot.add_to_blacklist(uid)
+            self._captcha.pop(uid, None)
+            await interaction.response.edit_message(
+                content=strings.CAPTCHA_BLACKLISTED, embed=None, view=None
+            )
+            return
+        st.locked_until = datetime.now(timezone.utc) + timedelta(seconds=secs)
+        st.fails += 1
+        await interaction.response.edit_message(
+            content=strings.CAPTCHA_FAILED.format(
+                until=int(st.locked_until.timestamp())
+            ),
+            embed=None, view=None,
+        )
 
     async def show_ground_list(
         self, interaction: discord.Interaction, edit: bool = False

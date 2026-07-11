@@ -13,6 +13,7 @@ import discord
 
 from maki.cogs.legion import render, strings
 from maki.cogs.legion.constants import (
+    CAPTCHA_TIMEOUT_SECONDS,
     LOBBY_SECONDS,
     MASTERY_KIND_LIFE,
     MASTERY_KIND_WEAPONS,
@@ -1216,3 +1217,30 @@ class DismantleConfirmView(_AuthorOnly):
             content=INVENTORY_DISMANTLE_CANCELLED, embed=None, view=None
         )
 
+
+
+class CaptchaView(_AuthorOnly):
+    """Anti-script button test: click the number named in the prompt. A correct
+    click continues to the ground list; a wrong one soft-locks the player."""
+
+    def __init__(
+        self, cog: "LegionCog", author_id: int, player: Player,
+        answer: int, choices: list[int],
+    ):
+        super().__init__(author_id=author_id, timeout=CAPTCHA_TIMEOUT_SECONDS)
+        self.cog = cog
+        self.player = player
+        self.answer = answer
+        for choice in choices:
+            button = discord.ui.Button(
+                label=str(choice), style=discord.ButtonStyle.secondary
+            )
+
+            async def cb(interaction: discord.Interaction, value: int = choice) -> None:
+                if value == self.answer:
+                    await self.cog.captcha_passed(interaction, self.player)
+                else:
+                    await self.cog.captcha_failed(interaction, self.player)
+
+            button.callback = cb
+            self.add_item(button)
