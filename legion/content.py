@@ -63,6 +63,9 @@ PATCH: dict = {
             "description": "堅硬的樹皮，可以用來製作防具。"},
         {"key": "raspberry", "name": "樹莓", "rarity": 2,
             "description": "酸甜的樹莓，吃起來非常爽口。"},
+        {"key": "red_potion", "name": "紅色藥水", "kind": "potion", "rarity": 2,
+         "stat_bonus_type": "hp", "stat_bonus_value": 30, 
+         "description": "紅色的藥水，能快速回復少量生命。"},
     ],
     "categories": [
         {"key": "sword", "name": "刀劍"},
