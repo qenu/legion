@@ -9,8 +9,8 @@ apply (rows are never hard-deleted; the /patch review shows removals).
 """
 
 PATCH: dict = {
-    "version": "0.1.11",
-    "notes": "- Added new materials, weapons, and mobs.",
+    "version": "0.1.12",
+    "notes": "Add new daily supply system, with a once/day button on /legion. Players can claim a daily supply of materials based on their contribution points. Added new materials and updated some existing ones.",
     "materials": [
         {"key": "iron_ore", "name": "鐵礦石", "rarity": 1,
          "description": "帶著鏽色紋路的礦石，鍛造的基礎。"},
