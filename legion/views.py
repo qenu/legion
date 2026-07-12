@@ -779,6 +779,7 @@ class InventoryCategoryView(_AuthorOnly):
         kind: str,
         weapons: list[PlayerWeapon] | None = None,
         consumables: list | None = None,
+        placeholder: str | None = None,
     ):
         super().__init__(author_id=author_id)
         self.cog = cog
@@ -813,7 +814,9 @@ class InventoryCategoryView(_AuthorOnly):
                 for s in (consumables or [])[:25]
             ]
         if options:
-            select = discord.ui.Select(placeholder=INVENTORY_CHOOSE, options=options)
+            select = discord.ui.Select(
+                placeholder=placeholder or INVENTORY_CHOOSE, options=options
+            )
 
             async def callback(interaction: discord.Interaction) -> None:
                 self.selected = select.values[0]

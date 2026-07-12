@@ -1192,8 +1192,11 @@ class LegionCog(commands.Cog):
         player: Player,
         kind: str,
         note: str | None = None,
+        used_id: int | None = None,
     ) -> None:
-        """Layer 2: one category's detailed embed + item select."""
+        """Layer 2: one category's detailed embed + item select. ``used_id`` (a
+        just-consumed material still in stock) becomes the select placeholder,
+        so a player can chain-heal off the same item without re-hunting it."""
         if kind == KIND_WEAPONS:
             weapons = await PlayerWeapon.filter(player=player).prefetch_related(
                 "weapon__category"
@@ -1211,8 +1214,13 @@ class LegionCog(commands.Cog):
                 ],
             ).prefetch_related("material")
             embed = render.inventory_consumables_embed(consumables, self.bot.color)
+            placeholder = next(
+                (s.material.name for s in consumables if s.material_id == used_id),
+                None,
+            )
             view = InventoryCategoryView(
-                self, interaction.user.id, player, kind, consumables=consumables
+                self, interaction.user.id, player, kind,
+                consumables=consumables, placeholder=placeholder,
             )
         await self._edit_tracked(interaction, 
             content=note, embed=embed, view=view
@@ -1315,9 +1323,10 @@ class LegionCog(commands.Cog):
                 return
             await self.show_inventory_category(interaction, player, KIND_WEAPONS)
         else:
-            _, note = await self._use_consumable(player, int(raw_id))
+            material, note = await self._use_consumable(player, int(raw_id))
             await self.show_inventory_category(
-                interaction, player, KIND_CONSUMABLES, note=note
+                interaction, player, KIND_CONSUMABLES, note=note,
+                used_id=material.id if material is not None else None,
             )
 
     async def press_dismantle(
