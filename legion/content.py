@@ -9,8 +9,8 @@ apply (rows are never hard-deleted; the /patch review shows removals).
 """
 
 PATCH: dict = {
-    "version": "0.1.17",
-    "notes": "Buff shield passives, add daily supply, add poison/burn effects",
+    "version": "0.1.18",
+    "notes": "Added spider mobs and nest, added silver ore to deep shafts, added flame lizard core to deep shafts, added spider fang and poison gland to upgrade costs.",
     "materials": [
         {"key": "iron_ore", "name": "鐵礦石", "rarity": 1,
          "description": "帶著鏽色紋路的礦石，鍛造的基礎。"},
@@ -66,6 +66,10 @@ PATCH: dict = {
         {"key": "red_potion", "name": "紅色藥水", "kind": "potion", "rarity": 2,
          "stat_bonus_type": "hp", "stat_bonus_value": 30, 
          "description": "紅色的藥水，能快速回復少量生命。"},
+        {"key": "poison_gland", "name": "毒腺", "rarity": 3,
+         "description": "分泌毒液的腺體，能用來製作。"},
+        {"key": "silver_ore", "name": "銀礦石", "rarity": 3,
+         "description": "閃閃發光的銀礦石，可以用來製作武器和裝備。"}
     ],
     "categories": [
         {"key": "sword", "name": "刀劍"},
@@ -281,7 +285,7 @@ PATCH: dict = {
             "passives": [],
             "drops": [
                 {"material": "slime_goo", "weight": 3, "min": 1, "max": 2},
-                {"material": "sunherb", "weight": 2, "min": 1, "max": 2}]
+                {"material": "duskberry", "weight": 2, "min": 1, "max": 2}]
         },
         {
             "key": "stone_golem", "name": "石像巨人", "tier": 3, "rounds_limit": 6,
@@ -341,6 +345,43 @@ PATCH: dict = {
                 {"material": "spider_fang", "weight": 1, "min": 1, "max": 2},
                 {"material": "cobweb", "weight": 3, "min": 1, "max": 2}]
         },
+        {
+            "key": "giant_spider", "name": "巨型蜘蛛", "tier": 3, "rounds_limit": 6,
+            "hp": 150, "atk": 20, "def": 8, "speed": 10,
+            "skills": [
+                {"skill": "poison_fang", "cooldown": 1, "hp_threshold": 1.0},
+                {"skill": "slash", "cooldown": 1, "hp_threshold": 0.5}],
+            "passives": [
+                {"skill": "exoskeletal", "requirement_type": "hp_below","requirement_value": 0.5}
+            ],
+            "drops": [
+                {"material": "spider_fang", "weight": 2, "min": 1, "max": 2},
+                {"material": "poison_gland", "weight": 1, "min": 1, "max": 1},
+                {"material": "rabbit_foot", "weight": 1, "min": 1, "max": 1}]
+        },
+        {
+            "key": "dire_spider", "name": "兇惡蜘蛛", "tier": 3, "rounds_limit": 6,
+            "hp": 200, "atk": 25, "def": 10, "speed": 12,
+            "skills": [
+                {"skill": "poison_fang", "cooldown": 1, "hp_threshold": 1.0},
+                {"skill": "slash", "cooldown": 1, "hp_threshold": 0.5}],
+            "passives": [
+                {"skill": "exoskeletal", "requirement_type": "hp_below","requirement_value": 0.5}
+            ],
+            "drops": [
+                {"material": "spider_fang", "weight": 2, "min": 1, "max": 2},
+                {"material": "wolf_hide", "weight": 1, "min": 1, "max": 1},
+                {"material": "boar_hide", "weight": 1, "min": 1, "max": 1}]
+        },
+        {
+            "key": "spiderling", "name": "小蜘蛛", "tier": 1, "rounds_limit": 6,
+            "hp": 30, "atk": 5, "def": 1, "speed": 12,
+            "skills": [],
+            "passives": [],
+            "drops": [
+                {"material": "cobweb", "weight": 2, "min": 1, "max": 2},
+                {"material": "spider_fang", "weight": 1, "min": 1, "max": 1}]
+        },
     ],
     "grounds": [
         {"key": "verdant_meadow", "name": "翠綠草原", "danger": 1, "min_legion_level": 1,
@@ -365,9 +406,14 @@ PATCH: dict = {
         {"key": "sunken_quarry", "name": "沉沒採石場", "danger": 5, "min_legion_level": 4,
          "description": "這裡曾經是個繁榮的採石場，但現在已經荒廢了。",
          "pool": [{"mob": "rock_slime", "weight": 2}, 
-                  {"mob": "dire_wolf", "weight": 1}, 
+                  {"mob": "cave_spider", "weight": 1}, 
                   {"mob": "stone_golem", "weight": 3},
                   {"mob": "dark_stone_golem", "weight": 1}]},
+        {"key": "spider_nest", "name": "蜘蛛巢穴", "danger": 4, "min_legion_level": 4,
+         "description": "這裡是蜘蛛的巢穴，空氣中充滿了黏稠的氣息。",
+         "pool": [{"mob": "giant_spider", "weight": 1}, 
+                  {"mob": "dire_spider", "weight": 1}, 
+                  {"mob": "spiderling", "weight": 2}]}
     ],
     "sites": [
         {"key": "old_mines", "name": "舊礦坑", "skill": "mine", "min_legion_level": 1,
@@ -381,7 +427,8 @@ PATCH: dict = {
         {"key": "deep_shafts", "name": "深井礦道", "skill": "mine", "min_legion_level": 3,
          "description": "深不見底的礦道，曾經是個老舊的井口。",
          "yields": [{"material": "iron_ore", "weight": 3, "min": 2, "max": 3},
-                    {"material": "golem_core", "weight": 1, "min": 1, "max": 1}]},
+                    {"material": "golem_core", "weight": 1, "min": 1, "max": 1},
+                    {"material": "silver_ore", "weight": 1, "min": 1, "max": 1}]},
         {"key": "ancient_ruins", "name": "古代遺跡", "skill": "garden", "min_legion_level": 3,
          "description": "古老的遺跡，似乎有些神秘的力量在其中。",
          "yields": [{"material": "thick_bark", "weight": 2, "min": 1, "max": 2},
@@ -480,8 +527,8 @@ PATCH: dict = {
         {"level": 4, "material": "flame_lizard_core", "base_qty": 4},
         {"level": 4, "material": "golem_core", "base_qty": 10},
         #{"level": 5, "material": "dark_golem_core", "base_qty": 5},
-        #{"level": 5, "material": "spider_fang", "base_qty": 6},
-        #{"level": 5, "material": "molt_skin", "base_qty": 10},
+        #{"level": 5, "material": "poison_gland", "base_qty": 6},
+        #{"level": 5, "material": "silver_ore", "base_qty": 10},
     ],
     # Daily supply (once/day button on /legion). Grouped by contribution
     # threshold like upgrade_costs are by level: a player receives EVERY entry
