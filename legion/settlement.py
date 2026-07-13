@@ -29,6 +29,7 @@ from maki.cogs.legion.constants import (
 from maki.cogs.legion.model.model import (
     DungeonInstance,
     Material,
+    Mob,
     MobDrop,
     Player,
     PlayerWeapon,
@@ -143,14 +144,21 @@ class SettlementService:
         drop_rolls = (
             RANDOM_GROUND_DROP_ROLLS if instance.random_ground else DROP_ROLLS_PER_RUN
         )
+        # The pack (mob_ids; legacy rows fall back to the single FK). Every
+        # pack member rolls its OWN drop table per player -- duplicates roll
+        # twice, so two slimes really are twice the fight AND twice the loot.
+        mob_ids: list[int] = instance.mob_ids or [instance.mob_id]
         drops = (
             await MobDrop.filter(
-                mob_id=instance.mob_id,
+                mob_id__in=set(mob_ids),
                 material__status=ContentStatus.ENABLED,  # disabled mats never drop
             ).prefetch_related("material")
             if won
             else []
         )
+        drops_by_mob: dict[int, list[MobDrop]] = {}
+        for d in drops:
+            drops_by_mob.setdefault(d.mob_id, []).append(d)
         materials = {d.material_id: d.material for d in drops}
 
         for result in results:
@@ -189,7 +197,12 @@ class SettlementService:
                 )
 
             if won and not outsider and drops:
-                rolled = roll_drops(drops, drop_rolls, rng)
+                rolled: dict[int, int] = {}
+                for mid in mob_ids:  # one table roll PER pack member
+                    for material_id, qty in roll_drops(
+                        drops_by_mob.get(mid, []), drop_rolls, rng
+                    ).items():
+                        rolled[material_id] = rolled.get(material_id, 0) + qty
                 for material_id, qty in rolled.items():
                     material = materials[material_id]
                     await self.inventory.add_material(player, material, qty)
@@ -234,8 +247,13 @@ class SettlementService:
 
         if won:
             legion = await instance.legion
-            mob = await instance.mob
-            report.legion_exp = mob.tier * LEGION_EXP_PER_MOB_TIER
+            # Legion exp sums the whole pack's tiers (duplicates count).
+            tiers = {
+                m.id: m.tier for m in await Mob.filter(id__in=set(mob_ids))
+            }
+            report.legion_exp = (
+                sum(tiers.get(mid, 0) for mid in mob_ids) * LEGION_EXP_PER_MOB_TIER
+            )
             # Exp banks only -- leveling is the manual Upgrade act. The flag
             # tells the cog to post the "ready to upgrade" reminder.
             report.upgrade_ready = await self.legions.add_exp(legion, report.legion_exp)

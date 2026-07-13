@@ -333,7 +333,9 @@ class HuntingGround(Model):
 
 
 class GroundMob(Model):
-    """A hunting ground encounter pool entry (weighted roll at spawn)."""
+    """DEPRECATED: superseded by GroundEncounter (packs, float weights).
+    The model (and its table) is kept only so old data isn't dropped; nothing
+    reads or writes it anymore."""
 
     ground = fields.ForeignKeyField("legion.HuntingGround", related_name="mobs")
     mob = fields.ForeignKeyField("legion.Mob", related_name="grounds")
@@ -347,6 +349,24 @@ class GroundMob(Model):
         return f"GroundMob(Ground: {self.ground.name}, Mob: {self.mob.name}, Weight: {self.weight})"
 
 
+class GroundEncounter(Model):
+    """A hunting ground encounter pool entry: one weighted roll spawns the
+    whole PACK -- ``mob_ids`` is an ordered list of Mob ids, 1 to
+    MAX_ENCOUNTER_MOBS long, duplicates allowed ("two rock slimes"). Weights
+    are relative floats (0.3 is a valid rare-pack weight). No unique
+    constraint: the pool is fully re-synced from content.py on every patch."""
+
+    ground = fields.ForeignKeyField("legion.HuntingGround", related_name="encounters")
+    mob_ids = fields.JSONField(default=list)
+    weight = fields.FloatField(default=1)
+
+    class Meta:  # type: ignore
+        table = "ground_encounters"
+
+    def __str__(self) -> str:
+        return f"GroundEncounter(Ground: {self.ground.name}, Mobs: {self.mob_ids}, Weight: {self.weight})"
+
+
 class DungeonInstance(Model):
     """A single expedition run spawned by a legion member.
 
@@ -358,7 +378,11 @@ class DungeonInstance(Model):
     id = fields.IntField(pk=True)
     legion = fields.ForeignKeyField("legion.Legion", related_name="dungeon_instances")
     ground = fields.ForeignKeyField("legion.HuntingGround", related_name="expeditions")
+    # The pack's FIRST mob (legacy anchor -- old rows and old code paths).
     mob = fields.ForeignKeyField("legion.Mob", related_name="dungeon_instances")
+    # The full pack: ordered Mob ids, duplicates allowed. Null = legacy
+    # single-mob row (fall back to the mob FK).
+    mob_ids = fields.JSONField(null=True)
 
     # Player pressed Random instead of picking the ground: explorer's bonus
     # at settlement (+1 mastery to all, richer drop rolls) on a win.

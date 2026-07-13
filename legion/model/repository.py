@@ -47,7 +47,7 @@ from maki.cogs.legion.model.model import (
     DungeonParticipant,
     GamePatch,
     GatherSite,
-    GroundMob,
+    GroundEncounter,
     HuntingGround,
     Legion,
     LegionStockpile,
@@ -709,11 +709,24 @@ class DungeonRepo:
             min_legion_level__lte=legion_level, status=ContentStatus.ENABLED
         )
 
-    async def ground_pool(self, ground: HuntingGround) -> list[GroundMob]:
-        """The ground's encounter pool (enabled mobs only), mob prefetched."""
-        return await GroundMob.filter(
-            ground=ground, mob__status=ContentStatus.ENABLED
-        ).prefetch_related("mob")
+    async def ground_pool(
+        self, ground: HuntingGround
+    ) -> list[tuple[GroundEncounter, list[Mob]]]:
+        """The ground's encounter pool with each entry's pack resolved to Mob
+        rows (order and duplicates preserved). Disabled mobs are dropped from
+        their packs; entries left empty are skipped entirely."""
+        encounters = await GroundEncounter.filter(ground=ground)
+        wanted = {mid for e in encounters for mid in (e.mob_ids or [])}
+        mobs = {
+            m.id: m
+            for m in await Mob.filter(id__in=wanted, status=ContentStatus.ENABLED)
+        }
+        pool: list[tuple[GroundEncounter, list[Mob]]] = []
+        for e in encounters:
+            pack = [mobs[mid] for mid in (e.mob_ids or []) if mid in mobs]
+            if pack:
+                pool.append((e, pack))
+        return pool
 
     async def drop_preview(self, mobs: list[Mob]) -> list[Material]:
         """Unique materials droppable by ANY of the given mobs (enabled only),
@@ -724,16 +737,25 @@ class DungeonRepo:
         unique = {d.material.id: d.material for d in drops}
         return sorted(unique.values(), key=lambda m: (m.rarity, m.name))
 
-    async def roll_mob(
+    async def roll_encounter(
         self, ground: HuntingGround, rng: random.Random | None = None
-    ) -> Mob | None:
-        """Weighted encounter roll from the ground's pool (enabled mobs only)."""
+    ) -> list[Mob]:
+        """Weighted encounter roll from the ground's pool: one pick returns
+        the whole PACK (1..MAX_ENCOUNTER_MOBS mobs, duplicates possible).
+        Empty list = nothing spawnable (empty/disabled pool)."""
         pool = await self.ground_pool(ground)
         if not pool:
-            return None
+            return []
         rng_ = rng or random
-        entry = rng_.choices(pool, weights=[e.weight for e in pool], k=1)[0]
-        return entry.mob
+        _, pack = rng_.choices(pool, weights=[e.weight for e, _ in pool], k=1)[0]
+        return pack
+
+    async def instance_mobs(self, instance: DungeonInstance) -> list[Mob]:
+        """The instance's full pack, order and duplicates preserved. Legacy
+        rows (mob_ids null) fall back to the single mob FK."""
+        ids = instance.mob_ids or [instance.mob_id]
+        by_id = {m.id: m for m in await Mob.filter(id__in=set(ids))}
+        return [by_id[mid] for mid in ids if mid in by_id]
 
     # -- lifecycle --
 
@@ -758,11 +780,12 @@ class DungeonRepo:
         self,
         legion: Legion,
         ground: HuntingGround,
-        mob: Mob,
+        mobs: list[Mob],
         expires_at: datetime,
         random_ground: bool = False,
     ) -> DungeonInstance | None:
-        """Create an ACTIVE instance, or return None if one already exists."""
+        """Create an ACTIVE instance for the PACK, or return None if one
+        already exists. The mob FK anchors the pack's first mob (legacy)."""
         async with in_transaction():
             existing = (
                 await DungeonInstance.filter(legion=legion, status=DungeonStatus.ACTIVE)
@@ -774,7 +797,8 @@ class DungeonRepo:
             return await DungeonInstance.create(
                 legion=legion,
                 ground=ground,
-                mob=mob,
+                mob=mobs[0],
+                mob_ids=[m.id for m in mobs],
                 expires_at=expires_at,
                 random_ground=random_ground,
             )

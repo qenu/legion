@@ -17,6 +17,7 @@ from tortoise.transactions import in_transaction
 
 from maki.cogs.legion.constants import (
     CONTENT_STATUS_ALIASES,
+    MAX_ENCOUNTER_MOBS,
     STARTER_WEAPONS,
     ContentStatus,
     EffectType,
@@ -30,7 +31,7 @@ from maki.cogs.legion.content import PATCH
 from maki.cogs.legion.model.model import (
     ActiveSkill,
     GatherSite,
-    GroundMob,
+    GroundEncounter,
     HuntingGround,
     LegionUpgradeCost,
     Material,
@@ -214,7 +215,29 @@ def validate_patch(patch: dict | None = None) -> list[str]:
         if not g.get("pool"):
             errors.append(f"grounds '{g.get('key')}': empty encounter pool")
         for entry in g.get("pool", []):
-            check("grounds", g["key"], "mob", entry.get("mob", ""), mobs)
+            # One of two shapes: {"mob": key} or {"mobs": [key, ...]} (a PACK
+            # -- duplicates fine, up to MAX_ENCOUNTER_MOBS).
+            has_single, has_pack = "mob" in entry, "mobs" in entry
+            if has_single == has_pack:
+                errors.append(
+                    f"grounds '{g['key']}': pool entry needs exactly one of "
+                    f"'mob'/'mobs': {entry}"
+                )
+                continue
+            keys = [entry["mob"]] if has_single else list(entry.get("mobs") or [])
+            if not 1 <= len(keys) <= MAX_ENCOUNTER_MOBS:
+                errors.append(
+                    f"grounds '{g['key']}': pack size must be 1-"
+                    f"{MAX_ENCOUNTER_MOBS}, got {len(keys)}"
+                )
+            for key in keys:
+                check("grounds", g["key"], "mob", key, mobs)
+            weight = entry.get("weight", 1)
+            if not isinstance(weight, (int, float)) or weight <= 0:
+                errors.append(
+                    f"grounds '{g['key']}': pool weight must be a positive "
+                    f"number, got {weight!r}"
+                )
 
     for s in p.get("sites", []):
         if s.get("skill") not in gather_skills:
@@ -514,15 +537,17 @@ async def _load_sections(p: dict) -> int:
         )
     grounds = {g.key: g for g in await HuntingGround.filter(key__isnull=False)}
     for g in p.get("grounds", []):
-        await sync_join(
-            GroundMob,
-            "ground_id",
-            grounds[g["key"]].id,
-            [
-                ({"mob_id": mobs[e["mob"]].id}, {"weight": e.get("weight", 1)})
-                for e in g.get("pool", [])
-            ],
-        )
+        # Encounter packs have no natural key (duplicates allowed), so the
+        # pool is a FULL REPLACE: delete this ground's entries, recreate.
+        await GroundEncounter.filter(ground_id=grounds[g["key"]].id).delete()
+        for e in g.get("pool", []):
+            keys = [e["mob"]] if "mob" in e else list(e["mobs"])
+            await GroundEncounter.create(
+                ground_id=grounds[g["key"]].id,
+                mob_ids=[mobs[k].id for k in keys],
+                weight=float(e.get("weight", 1)),
+            )
+            created += 1
 
     for s in p.get("sites", []):
         await put(

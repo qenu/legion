@@ -31,6 +31,13 @@ OUTSIDER_MASTERY_DIVISOR = 2
 
 DROP_ROLLS_PER_RUN = 1  # weighted loot-table picks per eligible player on a win
 
+# Encounter packs: a ground pool entry may spawn several mobs at once
+# ({"mobs": ["rock_slime", "rock_slime"], "weight": 0.3} -- duplicates fine,
+# weights are relative floats). NO compensating stat scaling: two mobs are
+# simply twice the fight (and roll twice the drops). Doom clock = the pack's
+# max rounds_limit; players pick targets at random.
+MAX_ENCOUNTER_MOBS = 4
+
 # Expeditions: a player starts one, picks a hunting ground (or Random), a
 # 60s lobby runs, then the fight fires automatically with whoever joined.
 # Difficulty scales off the GROUND's danger rating + party size -- legion

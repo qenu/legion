@@ -9,8 +9,8 @@ apply (rows are never hard-deleted; the /patch review shows removals).
 """
 
 PATCH: dict = {
-    "version": "0.2.3",
-    "notes": "Added Shield Main Weapon, bug fixes",
+    "version": "0.2.4",
+    "notes": "This is gonna be so much fun",
     "materials": [
         {
             "key": "iron_ore",
@@ -1065,9 +1065,14 @@ PATCH: dict = {
             "min_legion_level": 4,
             "description": "這裡是蜘蛛的巢穴，空氣中充滿了黏稠的氣息。",
             "pool": [
-                {"mob": "giant_spider", "weight": 1},
+                {"mob": "spider", "weight": 2},
+                {"mob": "cave_spider", "weight": 1},
                 {"mob": "dire_spider", "weight": 1},
-                {"mob": "spiderling", "weight": 2},
+                {"mob": "giant_spider", "weight": 1},
+                {"mobs": ["spiderling", "spiderling"], "weight": 0.5},
+                {"mobs": ["spiderling", "cave_spider"], "weight": 0.3},
+                {"mobs": ["spiderling", "dire_spider"], "weight": 0.2},
+                {"mobs": ["spiderling", "giant_spider"], "weight": 0.1},
             ],
         },
         {

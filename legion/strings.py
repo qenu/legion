@@ -101,6 +101,14 @@ HUNTING_EXPEDITION_DESC_LIST = [
     ("即將前往 **{ground}** 進行遠征，對抗 **{mob}** (等級 {tier}) ..."),
     ("發現 **{mob}** (等級 {tier}) 正在 **{ground}** 徘徊，"),
 ]
+HUNTING_EXPEDITION_GROUP_DESC_LIST = [
+    (
+        "你即將前往 **{ground}** 進行遠征，\n"
+        "這裡有一隻 **{mob}** (等級 {tier}) 以及其他怪物在附近！\n"
+    ),
+    ("即將前往 **{ground}** 進行遠征，對抗 **{mob}** (等級 {tier}) 以及其他怪物 ..."),
+    ("發現 **{mob}** (等級 {tier}) 正在 **{ground}** 徘徊，還有其他怪物在附近！"),
+]
 HUNTING_EXPEDITION_ROUNDSLIMIT = "你必須在 **{rounds} 回合** 內擊敗它"
 HUNTING_EXPEDITION_TIMELEFT = "準備階段剩餘時間：<t:{expires}:R>"
 HUNTING_PREPARATION_OVER = "準備階段已結束"

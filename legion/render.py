@@ -108,9 +108,20 @@ def ground_list_embed(
     return embed
 
 
+def _pack_display(mobs: list[Mob]) -> str:
+    """A pack as display text: '史萊姆' / '史萊姆 ×2、灰狼' (dupes counted,
+    first-appearance order kept)."""
+    counts: dict[str, int] = {}
+    for m in mobs:
+        counts[m.name] = counts.get(m.name, 0) + 1
+    return "、".join(
+        f"{name} ×{n}" if n > 1 else name for name, n in counts.items()
+    )
+
+
 def ground_detail_embed(
     ground: HuntingGround,
-    pool: list,  # list[GroundMob], mob prefetched
+    pool: list,  # list[(GroundEncounter, list[Mob])] -- packs resolved
     drops: list[Material],
     color: discord.Colour,
 ) -> discord.Embed:
@@ -119,12 +130,14 @@ def ground_detail_embed(
     if ground.description:
         desc.insert(0, ground.description)
     embed = discord.Embed(title=ground.name, description="\n".join(desc), color=color)
-    total = sum(e.weight for e in pool) or 1
+    total = sum(e.weight for e, _ in pool) or 1
     mob_lines = [
         strings.HUNTING_GROUND_MOB_LINE.format(
-            name=e.mob.name, tier=e.mob.tier, pct=round(e.weight * 100 / total)
+            name=_pack_display(pack),
+            tier=max(m.tier for m in pack),
+            pct=round(e.weight * 100 / total),
         )
-        for e in pool
+        for e, pack in pool
     ]
     embed.add_field(
         name=strings.HUNTING_GROUND_MOBS_TITLE,
@@ -141,7 +154,7 @@ def ground_detail_embed(
 
 def lobby_embed(
     ground: HuntingGround,
-    mob: Mob,
+    mobs: list[Mob],
     random_ground: bool,
     participants: list[str],
     expires_at: datetime,
@@ -151,11 +164,22 @@ def lobby_embed(
     where = (
         ground.name if not random_ground else f"{ground.name} ({strings.RANDOM_PREFIX})"
     )
-    desc = strings.HUNTING_EXPEDITION_DESC_LIST[
-        hash(where) % len(strings.HUNTING_EXPEDITION_DESC_LIST)
-    ].format(ground=ground.name, mob=mob.name, tier=mob.tier)
+    # Packs get the group flavor ("一隻 X 以及其他怪物…"), headlined by the
+    # pack's FIRST member -- the content author picks the face, so a pack can
+    # deliberately hide a golem behind a slime headline (or vice versa). The
+    # lobby never enumerates the rest; the composition stays a surprise until
+    # the fight fires. A lone mob keeps the classic line.
+    templates = (
+        strings.HUNTING_EXPEDITION_GROUP_DESC_LIST
+        if len(mobs) > 1
+        else strings.HUNTING_EXPEDITION_DESC_LIST
+    )
+    lead = mobs[0]
+    desc = templates[hash(where) % len(templates)].format(
+        ground=ground.name, mob=lead.name, tier=lead.tier
+    )
     rounds_limit = strings.HUNTING_EXPEDITION_ROUNDSLIMIT.format(
-        rounds=mob.rounds_limit
+        rounds=max(m.rounds_limit for m in mobs)
     )
     # At expiry the countdown line flips to the preparation-over notice.
     time_left = (
@@ -357,14 +381,13 @@ def settlement_embeds(
     """Paged settlement (players sorted by dealt+taken desc, ``per_page`` per
     embed) plus ``{discord_id: personal_text}`` for the ephemeral my-result
     button."""
+    pack_name = "、".join(m.name for m in result.mobs)  # dupes and all
     if result.won:
-        title = strings.SETTLE_WON.format(mob=result.mob.name, rounds=result.rounds + 1)
+        title = strings.SETTLE_WON.format(mob=pack_name, rounds=result.rounds + 1)
     elif result.rounded_out:
-        title = strings.SETTLE_END.format(mob=result.mob.name, rounds=result.rounds + 1)
+        title = strings.SETTLE_END.format(mob=pack_name, rounds=result.rounds + 1)
     else:
-        title = strings.SETTLE_LOST.format(
-            mob=result.mob.name, rounds=result.rounds + 1
-        )
+        title = strings.SETTLE_LOST.format(mob=pack_name, rounds=result.rounds + 1)
     blocks = []
     personal: dict[int, str] = {}
     for line in report.players:
@@ -384,10 +407,11 @@ def settlement_embeds(
     for page_no, page in enumerate(pages, start=1):
         embed = discord.Embed(title=title, color=color)
         embed.set_author(name=strings.SETTLE_RESULT_AUTHOR)
-        embed.description = strings.SETTLE_MOB_HP.format(
-            mob=result.mob.name,
-            hp=max(0, result.mob.current_hp),
-            max_hp=result.mob.max_hp,
+        embed.description = "\n".join(
+            strings.SETTLE_MOB_HP.format(
+                mob=m.name, hp=max(0, m.current_hp), max_hp=m.max_hp
+            )
+            for m in result.mobs
         )
         for _, header, text in page:
             embed.add_field(name=header, value=text, inline=False)

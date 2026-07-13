@@ -266,7 +266,8 @@ class ExpeditionMixin(LegionCogBase):
             await self.show_ground_list(interaction, edit=True)
             return
         pool = await self.dungeons.ground_pool(ground)
-        drops = await self.dungeons.drop_preview([e.mob for e in pool])
+        unique_mobs = {m.id: m for _, pack in pool for m in pack}
+        drops = await self.dungeons.drop_preview(list(unique_mobs.values()))
         embed = render.ground_detail_embed(ground, pool, drops, self.bot.color)
         view = GroundSelectView(self, interaction.user.id, grounds, selected=ground)
         await self._edit_tracked(interaction, content=None, embed=embed, view=view)
@@ -295,15 +296,15 @@ class ExpeditionMixin(LegionCogBase):
                 interaction, content=strings.HUNTING_GROUND_GONE, embed=None, view=None
             )
             return
-        mob = await self.dungeons.roll_mob(ground)
-        if mob is None:
+        mobs = await self.dungeons.roll_encounter(ground)
+        if not mobs:
             await self._edit_tracked(
                 interaction, content=strings.HUNTING_MOB_GONE, embed=None, view=None
             )
             return
         expires_at = datetime.now().astimezone() + timedelta(seconds=LOBBY_SECONDS)
         instance = await self.dungeons.spawn(
-            legion, ground, mob, expires_at, random_ground=is_random
+            legion, ground, mobs, expires_at, random_ground=is_random
         )
         if instance is None:
             await self._edit_tracked(
@@ -317,7 +318,7 @@ class ExpeditionMixin(LegionCogBase):
 
         channel = interaction.guild.get_channel(legion.channel_id)
         embed = render.lobby_embed(
-            ground, mob, is_random, [player.username], expires_at, self.bot.color
+            ground, mobs, is_random, [player.username], expires_at, self.bot.color
         )
         lobby_view = LobbyView(self, instance.id)
         message = await channel.send(embed=embed, view=lobby_view)
@@ -369,7 +370,7 @@ class ExpeditionMixin(LegionCogBase):
         ]
         embed = render.lobby_embed(
             instance.ground,
-            instance.mob,
+            await self.dungeons.instance_mobs(instance),
             instance.random_ground,
             names,
             instance.expires_at,
@@ -407,10 +408,13 @@ class ExpeditionMixin(LegionCogBase):
         for dp in participants:
             own_level = dp.player.legion.level if dp.player.legion else 0
             party.append(await build_player_state(dp.player, own_level))
-        mob_state = await build_mob_state(
-            instance.mob, instance.ground.danger, len(party)
-        )
-        result = run_simulation(party, mob_state)
+        # The whole pack, each member scaled independently -- deliberately NO
+        # compensation: two mobs are simply twice the fight.
+        mobs = await self.dungeons.instance_mobs(instance)
+        mob_states = [
+            await build_mob_state(m, instance.ground.danger, len(party)) for m in mobs
+        ]
+        result = run_simulation(party, mob_states)
 
         # Settle FIRST: rewards are committed before a single story message.
         report = await self.settlement.settle(
@@ -423,7 +427,7 @@ class ExpeditionMixin(LegionCogBase):
         await message.edit(
             embed=render.lobby_embed(
                 instance.ground,
-                instance.mob,
+                mobs,
                 instance.random_ground,
                 [dp.player.username for dp in participants],
                 instance.expires_at,
@@ -433,7 +437,7 @@ class ExpeditionMixin(LegionCogBase):
             view=None,
         )
         log_embeds = render.combat_log_embeds(
-            result, mob_state.rounds_limit, self.bot.color
+            result, max(s.rounds_limit for s in mob_states), self.bot.color
         )
         embeds, personal = render.settlement_embeds(report, result, self.bot.color)
         if len(embeds) == 1:

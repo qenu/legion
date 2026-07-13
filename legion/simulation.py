@@ -185,10 +185,10 @@ class CombatEvent:
 class SimulationResult:
     won: bool
     ticks: int
-    rounds: int  # mob turns taken (replay chapters)
-    rounded_out: bool  # mob survived its rounds_limit -> FAILED
+    rounds: int  # round-leader turns taken (replay chapters)
+    rounded_out: bool  # the pack survived its rounds limit -> FAILED
     party: list[PlayerState]
-    mob: MobState
+    mobs: list[MobState]  # the whole pack (1..MAX_ENCOUNTER_MOBS)
     events: list[CombatEvent]
 
     def to_results(self) -> list[ParticipantResult]:
@@ -740,23 +740,28 @@ def _use_skill(
 
 def _player_act(
     ps: PlayerState,
-    mob: MobState,
+    mobs: list[MobState],
     party: list[PlayerState],
     ctx: BattleContext,
     events: list[CombatEvent],
+    rng: random.Random,
 ) -> None:
     """EVERY off-cooldown skill fires this turn (cooldowns are the only
     pacing; tier no longer orders a priority rotation -- it scales values).
-    Basic attack only when nothing else fired."""
+    Basic attack only when nothing else fired. Against a PACK each skill (and
+    the basic attack) picks its own RANDOM living target -- it's an
+    autobattler, spray and pray."""
     fired = False
     for loaded in ps.skills:
-        if not mob.alive:
+        living = [m for m in mobs if m.alive]
+        if not living:
             break
         if ps.cooldowns.get(loaded.skill.id, 0) <= ps.turns_taken:
-            _use_skill(ps, loaded, mob, list(party), ctx, events)
+            _use_skill(ps, loaded, rng.choice(living), list(party), ctx, events)
             fired = True
-    if not fired and mob.alive:
-        _deal_damage(ps, mob, ps.atk, ctx, events, kind="attack")
+    living = [m for m in mobs if m.alive]
+    if not fired and living:
+        _deal_damage(ps, rng.choice(living), ps.atk, ctx, events, kind="attack")
     ps.turns_taken += 1
 
 
@@ -776,11 +781,17 @@ def _pick_target(targets: list[PlayerState], rng: random.Random) -> PlayerState:
 
 def _mob_act(
     mob: MobState,
+    mobs: list[MobState],
     party: list[PlayerState],
     ctx: BattleContext,
     events: list[CombatEvent],
     rng: random.Random,
+    closes_round: bool,
 ) -> None:
+    # The pack is a TEAM: offensive effects (damage/stun/DoTs) only ever
+    # target living PLAYERS -- mobs never attack each other. The pack list is
+    # passed solely as ALLIES, so heals find the pack's lowest member and
+    # shields stay on the caster.
     targets = [p for p in party if p.alive]
     if not targets:
         return
@@ -790,17 +801,21 @@ def _mob_act(
         if mob.hp_ratio <= ls.hp_threshold
         and mob.cooldowns.get(ls.skill.id, 0) <= mob.turns_taken
     ]
+    allies = [m for m in mobs if m.alive]
     if usable:
         loaded = rng.choice(usable)
-        _use_skill(mob, loaded, _pick_target(targets, rng), [mob], ctx, events)
+        _use_skill(mob, loaded, _pick_target(targets, rng), allies, ctx, events)
     else:
         _deal_damage(
             mob, _pick_target(targets, rng), mob.atk, ctx, events, kind="attack"
         )
     mob.turns_taken += 1
-    # The mob's action CLOSES the round (its events above are stamped with the
-    # round in progress); the doom clock advances here. Player stuns are
-    # denominated in completed rounds, so they wear down at the close too.
+    if not closes_round:
+        return
+    # The ROUND LEADER's action closes the round (its events above are stamped
+    # with the round in progress); the doom clock advances here. Player stuns
+    # are denominated in completed rounds, so they wear down at the close too.
+    # Non-leader pack members just act -- they never touch the clock.
     ctx.round += 1
     for p in party:
         if p.stun_rounds > 0:
@@ -881,40 +896,51 @@ def _apply_dots(
 
 
 def run_simulation(
-    party: list[PlayerState], mob: MobState, rng: random.Random | None = None
+    party: list[PlayerState], mobs: list[MobState], rng: random.Random | None = None
 ) -> SimulationResult:
-    """Run the fight to completion. Pure: no DB, no awaits, no wall clock."""
+    """Run the fight to completion. Pure: no DB, no awaits, no wall clock.
+
+    ``mobs`` is the PACK (1..MAX_ENCOUNTER_MOBS). The first LIVING mob is the
+    ROUND LEADER: its actions close rounds (doom clock, DoT ticks, player-stun
+    decay), exactly like the old single-mob rhythm; the rest of the pack just
+    acts on its own gauge. The doom clock is the pack's max rounds_limit, and
+    the fight is only won when EVERY mob is down.
+    """
     rng = rng or random.Random()
     ctx = BattleContext()
     events: list[CombatEvent] = []
+    rounds_limit = max(m.rounds_limit for m in mobs)
 
     # Everyone enters combat with their cooldowns RUNNING: a cd-N skill first
     # fires after the owner's Nth turn (cd 0 = every turn from the start). No
     # opening alpha-strike where the whole kit dumps on turn one; skills come
     # online in cooldown order. Applies to mobs too.
-    for combatant in (*party, mob):
+    for combatant in (*party, *mobs):
         for loaded in combatant.skills:
             combatant.cooldowns.setdefault(loaded.skill.id, loaded.cooldown)
 
+    def leader() -> MobState | None:
+        return next((m for m in mobs if m.alive), None)
+
     def rounded_out() -> bool:
-        # The mob's Nth action ends the fight -- the doom clock is exact.
-        return mob.alive and ctx.round >= mob.rounds_limit
+        # The leader's Nth action ends the fight -- the doom clock is exact.
+        return leader() is not None and ctx.round >= rounds_limit
 
     def over() -> bool:
-        return not mob.alive or not any(p.alive for p in party) or rounded_out()
+        return leader() is None or not any(p.alive for p in party) or rounded_out()
 
     while ctx.tick < SIM_MAX_TICKS and not over():
         ctx.tick += 1
 
         ready: list[Combatant] = []
-        for combatant in (*party, mob):
+        for combatant in (*party, *mobs):
             if not combatant.alive:
                 continue
             if isinstance(combatant, PlayerState) and combatant.stun_rounds > 0:
                 # Stunned players freeze: no gauge until the stun wears off
-                # (it ticks down as the mob closes rounds). The MOB always
-                # keeps filling -- its stun is spent by skipping the turns
-                # themselves, so freezing it would deadlock the fight.
+                # (it ticks down as rounds close). MOBS always keep filling --
+                # their stun is spent by skipping the turns themselves, so
+                # freezing them would deadlock the fight.
                 continue
             combatant.gauge += combatant.speed
             if combatant.gauge >= ATB_THRESHOLD:
@@ -924,18 +950,21 @@ def run_simulation(
             if over() or not actor.alive:
                 continue
             if isinstance(actor, PlayerState) and actor.stun_rounds > 0:
-                continue  # stunned mid-tick by the mob; gauge kept for later
+                continue  # stunned mid-tick by a mob; gauge kept for later
             actor.gauge -= ATB_THRESHOLD
             if isinstance(actor, MobState):
-                # Round boundary: dots tick ONCE per full mob gauge, BEFORE
-                # stun/freeze resolve -- a stunned mob still bleeds (stunning
-                # must never pause the party's DoTs), and a bleeding combatant
-                # can die of wounds here, including the mob itself.
-                for combatant in (*party, mob):
-                    if combatant.alive and combatant.dots:
-                        _apply_dots(combatant, ctx, events, rng)
-                if over() or not actor.alive:
-                    continue
+                closes_round = actor is leader()
+                if closes_round:
+                    # Round boundary: dots tick ONCE per full LEADER gauge,
+                    # BEFORE stun/freeze resolve -- a stunned mob still bleeds
+                    # (stunning must never pause the party's DoTs), and a
+                    # bleeding combatant can die of wounds here, including
+                    # any of the mobs themselves.
+                    for combatant in (*party, *mobs):
+                        if combatant.alive and combatant.dots:
+                            _apply_dots(combatant, ctx, events, rng)
+                    if over() or not actor.alive:
+                        continue
                 if actor.stun_rounds > 0:
                     # A stunned mob LOSES this turn: no action, and the round
                     # stays open -- the doom clock only counts real actions,
@@ -964,7 +993,7 @@ def run_simulation(
                             )
                         )
                         continue
-                _mob_act(actor, party, ctx, events, rng)
+                _mob_act(actor, mobs, party, ctx, events, rng, closes_round)
             else:
                 if actor.freeze_rounds > 0:
                     actor.freeze_rounds -= 1
@@ -978,15 +1007,16 @@ def run_simulation(
                             )
                         )
                         continue
-                _player_act(actor, mob, party, ctx, events)  # type: ignore[arg-type]
-            _check_requirements(mob, ctx, events)
+                _player_act(actor, mobs, party, ctx, events, rng)  # type: ignore[arg-type]
+            for m in mobs:
+                _check_requirements(m, ctx, events)
 
     return SimulationResult(
-        won=not mob.alive,
+        won=leader() is None,
         ticks=ctx.tick,
         rounds=ctx.round,
         rounded_out=rounded_out(),
         party=party,
-        mob=mob,
+        mobs=mobs,
         events=events,
     )
