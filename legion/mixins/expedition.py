@@ -336,11 +336,11 @@ class ExpeditionMixin(LegionCogBase):
     async def join_expedition(
         self, interaction: discord.Interaction, instance_id: int
     ) -> None:
-        if self._patch_blocked(session_start=True):
-            await self._send_patch_blocked(interaction)
-            return
+        # Deliberately NO patch/freeze gate here: spawning new expeditions is
+        # what locks -- an already-open lobby is the players' FINAL game, and
+        # anyone may still pile into it before it fires.
         await self._defer(interaction)
-        player = await self.ensure_player(interaction)
+        player = await self.ensure_player(interaction, gate_patch=False)
         if player is None or not await self.ensure_not_afk(interaction, player):
             return
         if not await self.ensure_battle_ready(interaction, player):

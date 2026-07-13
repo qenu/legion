@@ -9,8 +9,8 @@ apply (rows are never hard-deleted; the /patch review shows removals).
 """
 
 PATCH: dict = {
-    "version": "0.2.2",
-    "notes": "Added Shield Main Weapon,",
+    "version": "0.2.3",
+    "notes": "Added Shield Main Weapon, bug fixes",
     "materials": [
         {
             "key": "iron_ore",

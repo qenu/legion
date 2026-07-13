@@ -129,11 +129,15 @@ class LegionCogBase:
     async def _legion_for(self, guild: discord.Guild) -> Legion:
         return await self.legions.get_or_create(guild.id, clean_legion_name(guild.name))
 
-    async def ensure_player(self, interaction: discord.Interaction) -> Player | None:
+    async def ensure_player(
+        self, interaction: discord.Interaction, gate_patch: bool = True
+    ) -> Player | None:
         """The onboarding interceptor: returns the (regen-applied) player, or
         sends the ephemeral weapon-pick prompt and returns None. Also the
-        full-freeze patch gate: every game command passes through here."""
-        if self._patch_blocked():
+        full-freeze patch gate: every game command passes through here.
+        ``gate_patch=False`` skips the freeze check -- for actions that finish
+        something already in flight (e.g. joining an open lobby)."""
+        if gate_patch and self._patch_blocked():
             await self._send_patch_blocked(interaction)
             return None
         player = await self.players.get(interaction.user.id)
