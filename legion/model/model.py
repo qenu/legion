@@ -32,6 +32,10 @@ class Player(Model):
     # db_default so the AddField migration backfills the populated table).
     regen_buff_rate  = fields.IntField(default=0, db_default=0)
     regen_buff_until = fields.DatetimeField(null=True)
+    # Timed combat-stat buffs from food: {stat_type: {"value": int, "until": epoch}}.
+    # atk/def/speed/taunt; HP regen stays on regen_buff_* above. Nullable so the
+    # AddField migration is safe on the populated table (reads guard `or {}`).
+    stat_buffs       = fields.JSONField(default=dict, null=True)
 
     legion = fields.ForeignKeyField(
         "legion.Legion", null=True, on_delete=fields.SET_NULL

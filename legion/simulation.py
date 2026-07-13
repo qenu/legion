@@ -11,6 +11,7 @@ SettlementService.settle().
 """
 
 import random
+import time
 from dataclasses import dataclass, field
 
 from maki.cogs.legion.calculator import (
@@ -56,6 +57,22 @@ from maki.cogs.legion.model.model import (
 )
 from maki.cogs.legion.settlement import ParticipantResult
 from maki.cogs.legion.strings import MYSELF_TITLE
+from maki.cogs.legion.content import PATCH
+
+
+def _category_bonuses() -> dict[str, list[tuple[int, str, int]]]:
+    """Weapon-category mastery stat bonuses from content, keyed by category
+    key -> list of ``(unlock_level, stat_bonus_type, value)``. A player gets
+    every entry whose level is at or below their mastery in that category."""
+    out: dict[str, list[tuple[int, str, int]]] = {}
+    for c in PATCH.get("categories", []):
+        rows = c.get("bonus_stat")
+        if rows:
+            out[c["key"]] = [
+                (int(b["level"]), b["stat_bonus_type"], int(b["value"]))
+                for b in rows
+            ]
+    return out
 
 
 # --- runtime state ----------------------------------------------------------
@@ -104,6 +121,7 @@ class Combatant:
 
     damage_dealt: int = 0
     damage_taken: int = 0
+    healing_done: int = 0
 
     @property
     def alive(self) -> bool:
@@ -117,6 +135,7 @@ class Combatant:
 @dataclass
 class PlayerState(Combatant):
     player: Player = None  # type: ignore[assignment]
+    regen_bonus: int = 0  # HP/min from equipped REGEN passives (out-of-combat)
 
 
 @dataclass
@@ -195,6 +214,7 @@ async def build_player_state(player: Player, legion_level: int = 0) -> PlayerSta
         PLAYER_BASE_SPEED,
     )
     taunt = PLAYER_BASE_TAUNT
+    regen_bonus = 0  # summed from equipped REGEN passives; read out-of-combat
     # Passive formulas evaluate against BASE stats (before any passive
     # applies) -- no ordering dependence, no self-compounding.
     base_stats = {
@@ -203,14 +223,16 @@ async def build_player_state(player: Player, legion_level: int = 0) -> PlayerSta
         "taunt": taunt,
     }
     skills: list[LoadedSkill] = []
+    equipped_cats: dict[str, int] = {}  # category key -> mastery level (deduped)
 
     for slot in (WeaponSlot.MAIN, WeaponSlot.SUB):
         pw = await PlayerWeapon.get_or_none(
             player=player, equipped_slot=slot
-        ).prefetch_related("weapon")
+        ).prefetch_related("weapon__category")
         if pw is None:
             continue
         level = mastery_levels.get(pw.weapon.category_id, 0)
+        equipped_cats[pw.weapon.category.key] = level
         muts: dict[str, int] = pw.mutations or {}
 
         actives = (
@@ -259,6 +281,42 @@ async def build_player_state(player: Player, legion_level: int = 0) -> PlayerSta
                 speed += value
             elif bonus.stat_bonus_type == StatBonusType.TAUNT:
                 taunt += value
+            elif bonus.stat_bonus_type == StatBonusType.REGEN:
+                regen_bonus += value
+
+    # Weapon-category mastery bonuses: applied ONCE per equipped category (a
+    # dual-wield of the same type doesn't double them), for every unlock at or
+    # below that category's mastery level.
+    cat_bonuses = _category_bonuses()
+    for cat_key, mlevel in equipped_cats.items():
+        for unlock, stype, val in cat_bonuses.get(cat_key, []):
+            if unlock > mlevel:
+                continue
+            if stype == StatBonusType.HP:
+                max_hp += val
+            elif stype == StatBonusType.ATK:
+                atk += val
+            elif stype == StatBonusType.DEF:
+                def_ += val
+            elif stype == StatBonusType.SPEED:
+                speed += val
+            elif stype == StatBonusType.TAUNT:
+                taunt += val
+
+    # Timed food stat-buffs (atk/def/speed/taunt) still within their window.
+    now_epoch = time.time()
+    for stype, buff in (player.stat_buffs or {}).items():
+        if not isinstance(buff, dict) or buff.get("until", 0) <= now_epoch:
+            continue
+        val = int(buff.get("value", 0))
+        if stype == StatBonusType.ATK:
+            atk += val
+        elif stype == StatBonusType.DEF:
+            def_ += val
+        elif stype == StatBonusType.SPEED:
+            speed += val
+        elif stype == StatBonusType.TAUNT:
+            taunt += val
 
     return PlayerState(
         name=player.username,
@@ -270,6 +328,7 @@ async def build_player_state(player: Player, legion_level: int = 0) -> PlayerSta
         taunt=taunt,
         skills=skills,
         player=player,
+        regen_bonus=regen_bonus,
     )
 
 
@@ -279,6 +338,15 @@ async def effective_max_hp(player: Player, legion_level: int) -> int:
     drift apart. Future combat-only HP-boost skills must inflate a separate
     field, NOT this -- settlement slices back to this anchor."""
     return (await build_player_state(player, legion_level)).max_hp
+
+
+async def effective_max_hp_and_regen(
+    player: Player, legion_level: int
+) -> tuple[int, int]:
+    """One build -> (effective max HP, passive REGEN bonus HP/min). Lets the
+    interceptor fetch both without building the player state twice."""
+    state = await build_player_state(player, legion_level)
+    return state.max_hp, state.regen_bonus
 
 
 async def build_mob_state(
@@ -433,6 +501,7 @@ def _use_skill(
         target = min((a for a in allies if a.alive), key=lambda a: a.hp_ratio)
         healed = min(value, target.max_hp - target.current_hp)
         target.current_hp += healed
+        actor.healing_done += healed  # the HEALER gets the credit
         # Relabel only THIS event's target (avoid "Alice heals Alice"); never
         # mutate the combatant's name -- that would stick for all later events.
         target_name = MYSELF_TITLE if actor is target else target.name

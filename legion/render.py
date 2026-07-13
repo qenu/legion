@@ -164,25 +164,50 @@ def event_line(e: CombatEvent) -> str:
     )
 
 
-def combat_log_text(result: SimulationResult, rounds_limit: int) -> str:
-    """The full fight as PLAIN TEXT for the rounds.log attachment (markdown
-    markers stripped) -- replaces the retired reply-chain replay."""
-    def plain(s: str) -> str:
-        return s.replace("**", "").replace("__", "")
+COMBAT_LOG_FIELDS_PER_EMBED = 6
+COMBAT_LOG_EMBED_CHAR_BUDGET = 5500  # under Discord's 6000 total-embed ceiling
 
+
+def combat_log_embeds(
+    result: SimulationResult, rounds_limit: int, color: discord.Colour
+) -> list[discord.Embed]:
+    """The fight as embeds: one field per round (name 第 X 回合, value = its
+    events). Up to COMBAT_LOG_FIELDS_PER_EMBED fields per embed, spilling to the
+    next embed when a field would blow the per-embed char budget. Every embed
+    carries the 戰鬥紀錄 author line and a timestamp; the caller paginates."""
     rounds: dict[int, list[CombatEvent]] = {}
     for e in result.events:
         rounds.setdefault(e.round, []).append(e)
-    lines: list[str] = []
+
+    fields: list[tuple[str, str]] = []
     for round_no in sorted(rounds):
-        lines.append(
-            "=== " + strings.COMBAT_ROUND.format(
-                round_no=round_no, rounds_limit=rounds_limit
-            ) + " ==="
-        )
-        lines += [plain(event_line(e)) for e in rounds[round_no]]
-        lines.append("")
-    return "\n".join(lines).rstrip() + "\n"
+        name = strings.COMBAT_LOG_FIELD.format(round_no=round_no)
+        value = "\n".join(event_line(e) for e in rounds[round_no])
+        fields.append((name, value[:1024] or strings.COMBAT_ROUND_EMPTY))
+    if not fields:  # a fight with no recorded events (shouldn't happen)
+        fields = [(strings.COMBAT_LOG_FIELD.format(round_no=0), strings.COMBAT_ROUND_EMPTY)]
+
+    def _fresh() -> discord.Embed:
+        embed = discord.Embed(color=color)
+        embed.set_author(name=strings.COMBAT_LOG_BUTTON)
+        embed.timestamp = discord.utils.utcnow()
+        return embed
+
+    embeds: list[discord.Embed] = []
+    current = _fresh()
+    used, count = 0, 0
+    for name, value in fields:
+        cost = len(name) + len(value)
+        if count and (count >= COMBAT_LOG_FIELDS_PER_EMBED
+                      or used + cost > COMBAT_LOG_EMBED_CHAR_BUDGET):
+            embeds.append(current)
+            current = _fresh()
+            used, count = 0, 0
+        current.add_field(name=name, value=value, inline=False)
+        used += cost
+        count += 1
+    embeds.append(current)
+    return embeds
 
 
 def round_embed(
@@ -226,7 +251,7 @@ def _settlement_field(line, result: SimulationResult) -> tuple[str, str, int]:
         ((c, v) for c, v in deltas.items() if v != 0),
         key=lambda cv: (cv[1] < 0, -cv[1] if cv[1] >= 0 else cv[1]),
     )
-    parts = []
+    mastery_lines = []
     for category, value in ordered:
         text = strings.SETTLE_MASTERY_NET.format(
             category=category, delta=_signed_delta(value)
@@ -235,35 +260,40 @@ def _settlement_field(line, result: SimulationResult) -> tuple[str, str, int]:
             text += strings.SETTLE_RELOCK_LINE.format(
                 category=category, levels=relocks[category]
             )
-        parts.append(text)
-    if line.top_damage:
-        parts.append(strings.SETTLE_TOP_DAMAGE)
-    if line.top_tank:
-        parts.append(strings.SETTLE_TOP_TANK)
-    if line.drops:
-        parts.append(
-            strings.SETTLE_DROP + ": " + ", ".join(f"{mat.name}{strings.TIMES_EMOJI}{qty}" for mat, qty in line.drops)
-        )
-    if line.daily_contri:
-        parts.append(strings.SETTLE_DAILY_CONTRI.format(pts=line.daily_contri))
-    if line.outsider:
-        parts.append(strings.SETTLE_OUTSIDER_TAG)
+        mastery_lines.append(text)
 
     ps = next(
         (p for p in result.party if p.player.id == line.player.id), None
     )
     header = line.player.username
     sort_key = 0
+    # The block is a few blank-line-separated groups: combat stats, mastery
+    # changes, then rewards. Top damage/tank wear a crown on their stat line.
+    groups: list[str] = []
     if ps is not None:
         sort_key = ps.damage_dealt + ps.damage_taken
         header += strings.SKULL_EMOJI if not ps.alive else f" ({ps.current_hp:,}/{ps.max_hp:,} {strings.HEALTHPOINT_TITLE_SHORT})"
-        parts.insert(
-            0, (
-                f"{strings.SETTLE_DAMAGE_DEALT}: {ps.damage_dealt:,}\n"
-                f"{strings.SETTLE_DAMAGE_TAKEN}: {ps.damage_taken:,}"
-                )
+        crown = strings.CROWN_EMOJI
+        groups.append("\n".join([
+            f"{crown if line.top_damage else ''}{strings.SETTLE_DAMAGE_DEALT}: {ps.damage_dealt:,}",
+            f"{crown if line.top_tank else ''}{strings.SETTLE_DAMAGE_TAKEN}: {ps.damage_taken:,}",
+            f"{strings.SETTLE_HEAL_DONE}: {ps.healing_done:,}",
+        ]))
+    if mastery_lines:
+        groups.append("\n".join(mastery_lines))
+    rewards = []
+    if line.drops:
+        rewards.append(
+            strings.SETTLE_DROP + ": " + ", ".join(f"{mat.name}{strings.TIMES_EMOJI}{qty}" for mat, qty in line.drops)
         )
-    return header, "```\n{}\n```".format("\n".join(parts)), sort_key
+    if line.daily_contri:
+        rewards.append(strings.SETTLE_DAILY_CONTRI.format(pts=line.daily_contri))
+    if line.outsider:
+        rewards.append(strings.SETTLE_OUTSIDER_TAG)
+    if rewards:
+        groups.append("\n".join(rewards))
+    # Plain text (no code fence) so the custom crown emoji actually renders.
+    return header, "\n\n".join(groups), sort_key
 
 
 def settlement_embeds(
@@ -691,13 +721,23 @@ def inventory_consumables_embed(
     for s in stacks[:25]:
         details = []
         kind = s.material.kind.value
+        stype = s.material.stat_bonus_type.value if s.material.stat_bonus_type else "hp"
         if kind == "food" and s.material.stat_bonus_value:
-            details.append(
-                strings.INVENTORY_REGEN_EFFECT.format(
-                    value=s.material.stat_bonus_value,
-                    duration=s.material.duration or 0,
+            if stype in ("regen", "hp"):
+                details.append(
+                    strings.INVENTORY_REGEN_EFFECT.format(
+                        value=s.material.stat_bonus_value,
+                        duration=s.material.duration or 0,
+                    )
                 )
-            )
+            else:  # timed combat-stat buff
+                details.append(
+                    strings.FOOD_BUFF_EFFECT.format(
+                        value=s.material.stat_bonus_value,
+                        category=strings.STAT_NAMES.get(stype, stype),
+                        duration=s.material.duration or 0,
+                    )
+                )
         elif s.material.stat_bonus_value:
             details.append(
                 strings.INVENTORY_HEAL_EFFECT.format(value=s.material.stat_bonus_value)

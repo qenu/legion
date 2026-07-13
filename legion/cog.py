@@ -106,6 +106,7 @@ from maki.cogs.legion.simulation import (
     build_mob_state,
     build_player_state,
     effective_max_hp,
+    effective_max_hp_and_regen,
     run_simulation,
 )
 from maki.cogs.legion.utils import (
@@ -312,8 +313,10 @@ class LegionCog(commands.Cog):
         if player.legion_id:
             own = await player.legion
             own_level = own.level
-        eff_max = await effective_max_hp(player, own_level)
-        await self.players.apply_regen(player, own_level, eff_max)
+        eff_max, regen_bonus = await effective_max_hp_and_regen(player, own_level)
+        await self.players.apply_regen(
+            player, own_level, eff_max, bonus_regen=regen_bonus
+        )
         # Inactivity decay BEFORE bumping the activity stamp: erode above-cap
         # mastery for the gap since last seen, then reset the bookmark.
         if player.last_active_at is not None:
@@ -729,10 +732,9 @@ class LegionCog(commands.Cog):
         #         )
         #     )
 
-        # The round-by-round reply-chain replay is retired (unpopular): flip
-        # the lobby's countdown line to "preparation over", then post the
+        # Flip the lobby's countdown line to "preparation over", then post the
         # results directly. The full log lives behind a 戰鬥紀錄 button that
-        # hands each presser an ephemeral rounds.log.
+        # replies to each presser with ephemeral, paginated round embeds.
         await message.edit(
             embed=render.lobby_embed(
                 instance.ground,
@@ -745,15 +747,17 @@ class LegionCog(commands.Cog):
             ),
             view=None,
         )
-        log_text = render.combat_log_text(result, mob_state.rounds_limit)
+        log_embeds = render.combat_log_embeds(
+            result, mob_state.rounds_limit, self.bot.color
+        )
         embeds, personal = render.settlement_embeds(report, result, self.bot.color)
         if len(embeds) == 1:
-            view = CombatLogView(log_text)
+            view = CombatLogView(log_embeds)
             view.message = await message.reply(embed=embeds[0], view=view)
         else:
             # Public pager (shared page state, open to all) + ephemeral
             # my-result button + the log button.
-            pager = SettlementPaginator(embeds, personal, log_text=log_text)
+            pager = SettlementPaginator(embeds, personal, log_embeds=log_embeds)
             pager.message = await message.reply(embed=embeds[0], view=pager)
 
     # --- /legion ----------------------------------------------------------------
@@ -1145,20 +1149,36 @@ class LegionCog(commands.Cog):
                 inline=False,
             )
 
-        # Active food buff, if any. ensure_player already flushed regen, but
-        # the timestamp check guards the sub-minute window where a buff has
-        # ended without a flush clearing it yet.
+        # Active food buffs (regen + timed stat buffs). The timestamp checks
+        # guard the sub-minute window where a buff ended before a flush.
+        now = datetime.now().astimezone()
+        buff_lines: list[str] = []
         if (
             player.regen_buff_rate
             and player.regen_buff_until
-            and player.regen_buff_until > datetime.now().astimezone()
+            and player.regen_buff_until > now
         ):
-            embed.add_field(
-                name=strings.FOOD_BUFF_TITLE,
-                value=strings.FOOD_BUFF_ACTIVE.format(
+            buff_lines.append(
+                strings.FOOD_BUFF_ACTIVE.format(
                     value=player.regen_buff_rate,
                     until=int(player.regen_buff_until.timestamp()),
-                ),
+                )
+            )
+        now_epoch = now.timestamp()
+        for stype, buff in (player.stat_buffs or {}).items():
+            if not isinstance(buff, dict) or buff.get("until", 0) <= now_epoch:
+                continue
+            buff_lines.append(
+                strings.FOOD_STAT_BUFF_ACTIVE.format(
+                    category=strings.STAT_NAMES.get(stype, stype),
+                    value=int(buff.get("value", 0)),
+                    until=int(buff["until"]),
+                )
+            )
+        if buff_lines:
+            embed.add_field(
+                name=strings.FOOD_BUFF_TITLE,
+                value="\n".join(buff_lines),
                 inline=False,
             )
 
@@ -1409,12 +1429,16 @@ class LegionCog(commands.Cog):
             or material.kind not in (
                 MaterialKind.FOOD, MaterialKind.POTION, MaterialKind.CONSUMABLE
             )
-            or material.stat_bonus_type != StatBonusType.HP
+            or material.stat_bonus_type is None
         ):
             return None, "That can't be used right now."
 
         own_level = (await recipient.legion).level if recipient.legion_id else 0
-        eff_max = await effective_max_hp(recipient, own_level)
+        eff_max, regen_bonus = await effective_max_hp_and_regen(recipient, own_level)
+        stype = material.stat_bonus_type
+        value = material.stat_bonus_value or 0
+        duration = material.duration or 0
+        now = datetime.now().astimezone()
 
         if material.kind == MaterialKind.FOOD:
             if recipient.health_points <= 0:
@@ -1425,41 +1449,55 @@ class LegionCog(commands.Cog):
                 return None, strings.DEAD_BLOCKED
             if not await self.inventory.consume(player, {material.id: 1}):
                 return None, strings.INVENTORY_QTY_NOT_ENOUGH
-            # Flush the elapsed regen window BEFORE changing the rate, so the
-            # new buff can't retroactively apply to time already passed.
-            await self.players.apply_regen(recipient, own_level, eff_max)
-            duration = material.duration or 0
-            recipient.regen_buff_rate = material.stat_bonus_value or 0
-            recipient.regen_buff_until = datetime.now().astimezone() + timedelta(
-                minutes=duration
-            )
-            await recipient.save(
-                update_fields=["regen_buff_rate", "regen_buff_until"]
-            )
-            if on_other:
-                return material, strings.FOOD_BUFF_APPLIED_OTHER.format(
-                    target=recipient.username,
-                    material=material.name,
-                    value=recipient.regen_buff_rate,
-                    duration=duration,
+
+            if stype in (StatBonusType.REGEN, StatBonusType.HP):
+                # HP-per-minute regen buff. Flush the elapsed regen window first
+                # (with the passive bonus) so the new rate isn't back-paid.
+                await self.players.apply_regen(
+                    recipient, own_level, eff_max, bonus_regen=regen_bonus
                 )
-            return material, strings.FOOD_BUFF_APPLIED.format(
-                material=material.name,
-                value=recipient.regen_buff_rate,
-                duration=duration,
+                recipient.regen_buff_rate = value
+                recipient.regen_buff_until = now + timedelta(minutes=duration)
+                await recipient.save(
+                    update_fields=["regen_buff_rate", "regen_buff_until"]
+                )
+                if on_other:
+                    return material, strings.FOOD_BUFF_APPLIED_OTHER.format(
+                        target=recipient.username, material=material.name,
+                        value=value, duration=duration,
+                    )
+                return material, strings.FOOD_BUFF_APPLIED.format(
+                    material=material.name, value=value, duration=duration,
+                )
+
+            # Timed combat-stat buff (atk/def/speed/taunt): re-eating refreshes
+            # the same stat; different stats stack.
+            buffs = dict(recipient.stat_buffs or {})
+            buffs[str(stype)] = {
+                "value": value,
+                "until": int((now + timedelta(minutes=duration)).timestamp()),
+            }
+            recipient.stat_buffs = buffs
+            await recipient.save(update_fields=["stat_buffs"])
+            category = strings.STAT_NAMES.get(str(stype), str(stype))
+            if on_other:
+                return material, strings.FOOD_BUFF_EFFECT_APPLIED_OTHER.format(
+                    target=recipient.username, material=material.name,
+                    value=value, category=category, duration=duration,
+                )
+            return material, strings.FOOD_BUFF_EFFECT_APPLIED.format(
+                material=material.name, value=value,
+                category=category, duration=duration,
             )
 
-        # potion / legacy: instant, revive-capable
+        # potion / consumable: instant, revive-capable
         if not await self.inventory.consume(player, {material.id: 1}):
             return None, strings.INVENTORY_QTY_NOT_ENOUGH
         was_dead = recipient.health_points <= 0
-        healed = min(
-            material.stat_bonus_value or 0,
-            eff_max - recipient.health_points,
-        )
+        healed = min(value, eff_max - recipient.health_points)
         recipient.health_points += healed
         # Re-bookmark so a revive doesn't backpay dead downtime as regen.
-        recipient.hp_updated_at = datetime.now().astimezone()
+        recipient.hp_updated_at = now
         await recipient.save(update_fields=["health_points", "hp_updated_at"])
         if was_dead:
             if on_other:

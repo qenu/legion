@@ -161,6 +161,13 @@ def validate_patch(patch: dict | None = None) -> list[str]:
         except ValueError as e:
             errors.append(f"passive_skills '{s.get('key')}': {e}")
 
+    for c in p.get("categories", []):
+        for b in c.get("bonus_stat", []):
+            if b.get("stat_bonus_type") not in valid_stats:
+                errors.append(
+                    f"categories '{c.get('key')}': bad stat '{b.get('stat_bonus_type')}'"
+                )
+
     for w in p.get("weapons", []):
         check("weapons", w["key"], "category", w.get("category", ""), categories)
         for mount in w.get("actives", []):

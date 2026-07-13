@@ -110,11 +110,13 @@ class PlayerRepo:
         await player.save(update_fields=["contribution"])
 
     async def apply_regen(
-        self, player: Player, legion_level: int, effective_max: int | None = None
+        self, player: Player, legion_level: int, effective_max: int | None = None,
+        bonus_regen: int = 0,
     ) -> int:
         """Lazy out-of-combat regen: heal elapsed-minutes * rate since the
         bookmark, advance the bookmark by whole minutes (keeping the
-        remainder). Food buffs add +regen_buff_rate/min for the part of the
+        remainder). Rate = base + legion perk + ``bonus_regen`` (equipped REGEN
+        passives). Food buffs add +regen_buff_rate/min for the part of the
         window inside the buff. The DEAD (0 HP) do not regenerate -- potions
         are the revive path. Call whenever a player is fetched."""
         now = datetime.now().astimezone()
@@ -138,7 +140,7 @@ class PlayerRepo:
         if minutes <= 0:
             return 0
         cap = effective_max or player.max_health_points
-        rate = BASE_REGEN_PER_MINUTE + get_regen_rate(legion_level)
+        rate = BASE_REGEN_PER_MINUTE + get_regen_rate(legion_level) + max(0, bonus_regen)
         healed = minutes * rate
 
         # Food buff overlap: buffed minutes inside [last, last+minutes].

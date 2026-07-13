@@ -6,7 +6,6 @@ service methods and re-render via render.py. No game logic lives here.
 
 from __future__ import annotations
 
-import io
 from typing import TYPE_CHECKING
 
 import discord
@@ -186,10 +185,18 @@ class UseItemView(_AuthorOnly):
         options = []
         for s in stacks[:25]:
             m = s.material
+            stype = m.stat_bonus_type.value if m.stat_bonus_type else "hp"
             if m.kind.value == "food":
-                desc = INVENTORY_REGEN_EFFECT.format(
-                    value=m.stat_bonus_value or 0, duration=m.duration or 0
-                )
+                if stype in ("regen", "hp"):
+                    desc = INVENTORY_REGEN_EFFECT.format(
+                        value=m.stat_bonus_value or 0, duration=m.duration or 0
+                    )
+                else:  # timed combat-stat buff
+                    desc = FOOD_BUFF_EFFECT.format(
+                        value=m.stat_bonus_value or 0,
+                        category=STAT_NAMES.get(stype, stype),
+                        duration=m.duration or 0,
+                    )
             else:
                 desc = f"{INVENTORY_HEAL_EFFECT.format(value=m.stat_bonus_value or 0)} · {POTION_REVIVE_TAG}"
             options.append(
@@ -243,20 +250,25 @@ class LobbyView(discord.ui.View):
 
 # --- settlement -------------------------------------------------------------------
 
-def _combat_log_button(log_text: str) -> discord.ui.Button:
-    """戰鬥紀錄: hands the presser the full fight as an EPHEMERAL rounds.log.
-    A fresh discord.File per press -- file objects are single-use."""
+def _combat_log_button(log_embeds: list[discord.Embed]) -> discord.ui.Button:
+    """戰鬥紀錄: replies to the presser with the fight as EPHEMERAL embeds (one
+    field per round). A single embed sends flat; multiple pages get an ephemeral
+    paginator (its own timeout). No attachment -- avoids client decode issues."""
     button = discord.ui.Button(
         label=COMBAT_LOG_BUTTON, style=discord.ButtonStyle.secondary
     )
 
     async def callback(interaction: discord.Interaction) -> None:
+        if len(log_embeds) <= 1:
+            await interaction.response.send_message(
+                embed=log_embeds[0], ephemeral=True
+            )
+            return
+        pager = GenericEmbedPaginator(
+            log_embeds, author=interaction.user, timeout=600
+        )
         await interaction.response.send_message(
-            file=discord.File(
-                io.BytesIO(log_text.encode("utf-8")),
-                filename=COMBAT_LOG_FILENAME,
-            ),
-            ephemeral=True,
+            embed=log_embeds[0], view=pager, ephemeral=True
         )
 
     button.callback = callback
@@ -267,10 +279,10 @@ class CombatLogView(discord.ui.View):
     """Single-page settlement: just the public 戰鬥紀錄 button (the paginator
     carries its own copy). Times out like the pager and strips itself."""
 
-    def __init__(self, log_text: str):
+    def __init__(self, log_embeds: list[discord.Embed]):
         super().__init__(timeout=600)
         self.message: discord.Message | None = None
-        self.add_item(_combat_log_button(log_text))
+        self.add_item(_combat_log_button(log_embeds))
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.message is not None:
@@ -295,14 +307,14 @@ class SettlementPaginator(GenericEmbedPaginator):
         self,
         embeds: list[discord.Embed],
         personal: dict[int, str],
-        log_text: str | None = None,
+        log_embeds: list[discord.Embed] | None = None,
     ):
         super().__init__(embeds, author=None, timeout=600)
         self.personal = personal
         self.message: discord.Message | None = None
         self.remove_item(self.remove)  # inherited close/delete button
-        if log_text:
-            self.add_item(_combat_log_button(log_text))
+        if log_embeds:
+            self.add_item(_combat_log_button(log_embeds))
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.message is not None:

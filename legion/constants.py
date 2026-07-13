@@ -211,6 +211,7 @@ class StatBonusType(StrEnum):
     DEF   = "def"
     HP    = "hp"
     TAUNT = "taunt"  # aggro pull; weights mob target selection (not a combat stat)
+    REGEN = "regen"  # HP recovered per minute (out-of-combat); food buff / passive
 
 class RequirementType(StrEnum):
     HP_BELOW    = "hp_below"     # HP below a certain %

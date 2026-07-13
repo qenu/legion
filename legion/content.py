@@ -9,8 +9,8 @@ apply (rows are never hard-deleted; the /patch review shows removals).
 """
 
 PATCH: dict = {
-    "version": "0.1.18",
-    "notes": "Added spider mobs and nest, added silver ore to deep shafts, added flame lizard core to deep shafts, added spider fang and poison gland to upgrade costs.",
+    "version": "0.2.0",
+    "notes": "Added legion level 5 weapons, grounds, and mobs. Added new materials, food, and potions.",
     "materials": [
         {"key": "iron_ore", "name": "鐵礦石", "rarity": 1,
          "description": "帶著鏽色紋路的礦石，鍛造的基礎。"},
@@ -31,7 +31,7 @@ PATCH: dict = {
         {"key": "golem_core", "name": "魔像核心", "rarity": 3,
          "description": "仍在微微發燙的核心，蘊含古老的力量。"},
         {"key": "hearty_stew", "name": "燉菜", "kind": "food", "rarity": 1,
-         "stat_bonus_type": "hp", "stat_bonus_value": 2, "duration": 30,
+         "stat_bonus_type": "regen", "stat_bonus_value": 2, "duration": 30,
          "description": "熱騰騰的一鍋，喝下去暖到骨子裡。"},
         {"key": "bitter_tonic", "name": "苦藥水", "kind": "potion", "rarity": 2,
          "stat_bonus_type": "hp", "stat_bonus_value": 40,
@@ -46,7 +46,7 @@ PATCH: dict = {
         {"key": "molt_skin", "name": "脫落的皮", "rarity": 2,
          "description": "脫落的皮，感覺有點噁心。"},
         {"key": "spring_roll", "name": "春捲", "kind": "food", "rarity": 2,
-         "stat_bonus_type": "hp", "stat_bonus_value": 3, "duration": 30,
+         "stat_bonus_type": "speed", "stat_bonus_value": 3, "duration": 30,
          "description": "半透明的外皮，裡面包著各種蔬菜，吃起來清爽。"},
         {"key": "flame_lizard_core", "name": "火蜥蜴核心", "rarity": 3,
             "description": "仍在微微發燙的核心，蘊含古老的火焰力量。"},
@@ -57,7 +57,7 @@ PATCH: dict = {
         {"key": "spider_fang", "name": "蜘蛛牙", "rarity": 2,
             "description": "鋒利的蜘蛛牙，帶有微弱的毒性。"},
         {"key": "rabbit_porridge", "name": "兔肉粥", "kind": "food", "rarity": 2,
-         "stat_bonus_type": "hp", "stat_bonus_value": 5, "duration": 30,
+         "stat_bonus_type": "regen", "stat_bonus_value": 5, "duration": 30,
             "description": "神秘的兔肉粥，非常的黏稠美味。"},
         {"key": "thick_bark", "name": "厚樹皮", "rarity": 2,
             "description": "堅硬的樹皮，可以用來製作防具。"},
@@ -69,13 +69,26 @@ PATCH: dict = {
         {"key": "poison_gland", "name": "毒腺", "rarity": 3,
          "description": "分泌毒液的腺體，能用來製作。"},
         {"key": "silver_ore", "name": "銀礦石", "rarity": 3,
-         "description": "閃閃發光的銀礦石，可以用來製作武器和裝備。"}
+         "description": "閃閃發光的銀礦石，可以用來製作武器和裝備。"},
+        {"key": "moss_patch", "name": "苔蘚", "rarity": 1,
+         "description": "柔軟的苔蘚，可以用來製作一些東西。"},
+        {"key": "green_potion", "name": "綠色藥水", "kind": "potion", "rarity": 2,
+         "stat_bonus_type": "hp", "stat_bonus_value": 30, 
+         "description": "綠色的藥水，能快速回復少量生命。"},
     ],
     "categories": [
-        {"key": "sword", "name": "刀劍"},
-        {"key": "bow", "name": "弓箭"},
-        {"key": "staff", "name": "法器"},
-        {"key": "shield", "name": "盾牌"},
+        {"key": "sword", "name": "刀劍", "bonus_stat": [
+            {"level": 3, "stat_bonus_type": "speed", "value": 3},
+            {"level": 6, "stat_bonus_type": "atk", "value": 5}]},
+        {"key": "bow", "name": "弓箭", "bonus_stat": [
+            {"level": 3, "stat_bonus_type": "atk", "value": 2},
+            {"level": 6, "stat_bonus_type": "speed", "value": 4}]},
+        {"key": "staff", "name": "法器", "bonus_stat": [
+            {"level": 3, "stat_bonus_type": "hp", "value": 15},
+            {"level": 6, "stat_bonus_type": "atk", "value": 4}]},
+        {"key": "shield", "name": "盾牌", "bonus_stat": [
+            {"level": 3, "stat_bonus_type": "def", "value": 5},
+            {"level": 6, "stat_bonus_type": "taunt", "value": 5}]},
     ],
     # effect types: damage, heal, bleed, poison, burn, stun
     "active_skills": [
@@ -94,6 +107,8 @@ PATCH: dict = {
         {"key": "poison_fang", "name": "毒牙", "effect_type": "poison", "effect_value": "{atk}*20%", "cooldown": 3},
         {"key": "focus_shot", "name": "專注射擊", "effect_type": "damage", "effect_value": "{atk} + 15", "cooldown": 1},
         {"key": "flame_arrow", "name": "火焰箭", "effect_type": "burn", "effect_value": "{atk}*20%", "cooldown": 3},
+        {"key": "fire_slash", "name": "火焰斬擊", "effect_type": "burn", "effect_value": "{atk}+10", "cooldown": 1},
+        {"key": "poison_arrow", "name": "毒箭", "effect_type": "poison", "effect_value": "{atk}*20%", "cooldown": 3},
     ],
     # stat_bonus_type: hp, atk, def, speed, taunt
     "passive_skills": [
@@ -188,8 +203,8 @@ PATCH: dict = {
         },
         {
             "key": "flame_lizard_bow", "name": "火蜥弓", "category": "bow",
-            "actives": [{"skill": "focus_shot", "tier": 2, "req": 2},
-                       {"skill": "flame_arrow", "tier": 2, "req": 3}],
+            "actives": [{"skill": "", "tier": 2, "req": 2},
+                       {"skill": "", "tier": 2, "req": 3}],
             "passives": [{"skill": "fleetfoot", "tier": 2, "req": 2},
                         {"skill": "focus", "tier": 2, "req": 3},
                         {"skill": "haste", "tier": 1, "req": 4}],
@@ -201,6 +216,30 @@ PATCH: dict = {
                         {"skill": "grit", "tier": 2, "req": 3},
                         {"skill": "provoke", "tier": 1, "req": 3}],
             "main_weapon": False,
+        },
+        {
+            "key": "burning_blade", "name": "燃燒之刃", "category": "sword",
+            "actives": [{"skill": "fire_slash", "tier": 1, "req": 5},
+                      {"skill": "cleave", "tier": 2, "req": 2},],
+            "passives": [{"skill": "grit", "tier": 2, "req": 4},
+                      {"skill": "focus", "tier": 2, "req": 4},
+                      {"skill": "enrage", "tier": 2, "req": 6}],
+        },
+        {
+            "key": "spider_fang_blade", "name": "蜘蛛牙", "category": "sword",
+            "actives": [{"skill": "poison_fang", "tier": 4, "req": 5},
+                      {"skill": "slash", "tier": 3, "req": 4},],
+            "passives": [{"skill": "grit", "tier": 2, "req": 4},
+                      {"skill": "focus", "tier": 2, "req": 4},
+                      {"skill": "haste", "tier": 3, "req": 7}],
+        },
+        {
+            "key": "spider_web_bow", "name": "蛛網弓", "category": "bow",
+            "actives": [{"skill": "piercing_shot", "tier": 2, "req": 2},
+                       {"skill": "poison_arrow", "tier": 2, "req": 5}],
+            "passives": [{"skill": "fleetfoot", "tier": 2, "req": 4},
+                        {"skill": "focus", "tier": 2, "req": 4},
+                        {"skill": "haste", "tier": 1, "req": 5}],
         },
     ],
     "mobs": [
@@ -382,6 +421,18 @@ PATCH: dict = {
                 {"material": "cobweb", "weight": 2, "min": 1, "max": 2},
                 {"material": "spider_fang", "weight": 1, "min": 1, "max": 1}]
         },
+        {
+            "key": "mossy_golem", "name": "苔蘚魔像", "tier": 3, "rounds_limit": 6,
+            "hp": 200, "atk": 15, "def": 12, "speed": 4,
+            "skills": [
+                {"skill": "quake", "cooldown": 3, "hp_threshold": 0.7}],
+            "passives": [
+                {"skill": "thick_hide", "requirement_type": "hp_below","requirement_value": 0.8}],
+            "drops": [
+                {"material": "golem_core", "weight": 1, "min": 1, "max": 1},
+                {"material": "thick_bark", "weight": 2, "min": 1, "max": 2},
+                {"material": "moss_patch", "weight": 3, "min": 2, "max": 4}]
+        },
     ],
     "grounds": [
         {"key": "verdant_meadow", "name": "翠綠草原", "danger": 1, "min_legion_level": 1,
@@ -413,7 +464,12 @@ PATCH: dict = {
          "description": "這裡是蜘蛛的巢穴，空氣中充滿了黏稠的氣息。",
          "pool": [{"mob": "giant_spider", "weight": 1}, 
                   {"mob": "dire_spider", "weight": 1}, 
-                  {"mob": "spiderling", "weight": 2}]}
+                  {"mob": "spiderling", "weight": 2}]},
+        {"key": "gloomy_cavern", "name": "陰暗洞穴", "danger": 5, "min_legion_level": 5,
+         "description": "陰暗潮濕的洞穴，彷彿有什麼東西在注視著你。",
+         "pool": [{"mob": "dark_stone_golem", "weight": 2}, 
+                  {"mob": "cave_spider", "weight": 3},
+                  {"mob": "mossy_golem", "weight": 1},]},
     ],
     "sites": [
         {"key": "old_mines", "name": "舊礦坑", "skill": "mine", "min_legion_level": 1,
@@ -516,6 +572,34 @@ PATCH: dict = {
          "inputs": [{"material": "cobweb", "qty": 3},
                     {"material": "raspberry", "qty": 2},
                     {"material": "slime_goo", "qty": 5}]},
+        {"key": "brew_green_potion", "name": "綠藥水", "skill": "brew",
+         "material": "green_potion", "qty": 1, "req": 2,
+         "inputs": [{"material": "cobweb", "qty": 3},
+                    {"material": "moss_patch", "qty": 2},
+                    {"material": "sunherb", "qty": 5}]},
+        {"key": "forge_forged_shield", "name": "鍛造盾牌",
+         "weapon": "forged_shield",
+         "inputs": [{"material": "iron_ore", "qty": 5},
+                    {"material": "golem_core", "qty": 2},
+                    {"material": "thick_bark", "qty": 3}]},
+        {"key": "forge_burning_blade", "name": "燃燒之刃",
+         "weapon": "burning_blade",
+         "inputs": [{"material": "flame_lizard_core", "qty": 3},
+                    {"material": "dark_golem_core", "qty": 2},
+                    {"material": "iron_ore", "qty": 5},
+                    {"material": "rough_stone", "qty": 5}]},
+        {"key": "forge_spider_fang_blade", "name": "蜘蛛牙",
+         "weapon": "spider_fang_blade",
+         "inputs": [{"material": "spider_fang", "qty": 4},
+                    {"material": "poison_gland", "qty": 2},
+                    {"material": "iron_ore", "qty": 5},
+                    {"material": "dark_golem_core", "qty": 3}]},
+        {"key": "forge_spider_web_bow", "name": "蛛網弓",
+         "weapon": "spider_web_bow",
+         "inputs": [{"material": "spider_fang", "qty": 4},
+                    {"material": "cobweb", "qty": 5},
+                    {"material": "poison_gland", "qty": 3},
+                    {"material": "iron_ore", "qty": 5}]},
     ],
     "upgrade_costs": [
         {"level": 2, "material": "slime_goo", "base_qty": 5},
@@ -526,9 +610,10 @@ PATCH: dict = {
         {"level": 4, "material": "thick_bark", "base_qty": 5},
         {"level": 4, "material": "flame_lizard_core", "base_qty": 4},
         {"level": 4, "material": "golem_core", "base_qty": 10},
-        #{"level": 5, "material": "dark_golem_core", "base_qty": 5},
-        #{"level": 5, "material": "poison_gland", "base_qty": 6},
-        #{"level": 5, "material": "silver_ore", "base_qty": 10},
+        {"level": 5, "material": "dark_golem_core", "base_qty": 5},
+        {"level": 5, "material": "poison_gland", "base_qty": 6},
+        {"level": 5, "material": "cobweb", "base_qty": 20},
+        #{"level": 6, "material": "silver_ore", "base_qty": 10},
     ],
     # Daily supply (once/day button on /legion). Grouped by contribution
     # threshold like upgrade_costs are by level: a player receives EVERY entry
@@ -539,6 +624,6 @@ PATCH: dict = {
         {"threshold": 50, "material": "bitter_tonic", "qty": 1},
         {"threshold": 50, "material": "hearty_stew", "qty": 2},
         {"threshold": 100, "material": "bitter_tonic", "qty": 2},
-        {"threshold": 100, "material": "spring_roll", "qty": 1},
+        {"threshold": 100, "material": "rabbit_porridge", "qty": 1},
     ],
 }
