@@ -364,7 +364,7 @@ PATCH: dict = {
             "key": "perserverance",
             "name": "堅毅",
             "effect_type": "shield",
-            "effect_value": "{player.hp} * 10%",
+            "effect_value": "{player.max_health} * 10%",
             "cooldown": 3,
         },
     ],
