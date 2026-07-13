@@ -31,6 +31,10 @@ from maki.cogs.legion.constants import (
     CAPTCHA_BUTTONS,
     CAPTCHA_INTERVAL_TOLERANCE,
     CAPTCHA_LOCKOUT_BASE,
+    CAPTCHA_RUNS_CHANCE_CAP,
+    CAPTCHA_RUNS_CHANCE_STEP,
+    CAPTCHA_RUNS_GRACE,
+    CAPTCHA_RUNS_RESET_GAP,
     CAPTCHA_STREAK_TRIGGER,
     CRAFT_MASTERY_PTS,
     MASTERY_HARD_CAP,
@@ -92,6 +96,7 @@ class _CaptchaState:
     last_at: datetime | None = None   # last expedition attempt
     last_interval: int = 0            # previous gap, seconds
     streak: int = 0                   # regular-gap run length
+    runs: int = 0                     # consecutive expeditions this session (volume)
     fails: int = 0                    # consecutive test failures
     locked_until: datetime | None = None  # soft-lockout expiry
 from maki.cogs.legion.seeds import (
@@ -256,11 +261,15 @@ class LegionCog(commands.Cog):
             await interaction.response.edit_message(**kwargs)
 
     @staticmethod
-    async def _defer(interaction: discord.Interaction) -> None:
-        """Acknowledge a component press within Discord's 3s window BEFORE
-        doing DB work -- prevents 10062 Unknown interaction on slow paths."""
+    async def _defer(
+        interaction: discord.Interaction, ephemeral: bool = False
+    ) -> None:
+        """Acknowledge within Discord's 3s window BEFORE doing DB work --
+        prevents 10062 Unknown interaction on slow paths. Component presses defer
+        the message update (ephemeral is ignored there); slash commands should
+        pass ephemeral=True when their eventual reply is ephemeral."""
         if not interaction.response.is_done():
-            await interaction.response.defer()
+            await interaction.response.defer(ephemeral=ephemeral)
 
     @staticmethod
     async def _notify(interaction: discord.Interaction, content: str) -> None:
@@ -421,9 +430,11 @@ class LegionCog(commands.Cog):
     )
     @app_commands.guild_only()
     async def expedition(self, interaction: discord.Interaction) -> None:
+        log.debug("/expedition by user {}", interaction.user.id)
         if self._patch_blocked(session_start=True):
             await self._send_patch_blocked(interaction)
             return
+        await self._defer(interaction, ephemeral=True)
         player = await self.ensure_player(interaction)
         if player is None or not await self.ensure_not_afk(interaction, player):
             return
@@ -434,28 +445,27 @@ class LegionCog(commands.Cog):
             return
         legion = await self._legion_for(interaction.guild)
         if not legion.channel_id:
-            await interaction.response.send_message(
-                strings.LEGION_NOT_CONFIGURED, ephemeral=True
-            )
+            await self._notify(interaction, strings.LEGION_NOT_CONFIGURED)
             return
         if await self.dungeons.active_for(legion) is not None:
-            await interaction.response.send_message(
-                strings.HUNTING_EXPEDITION_BUSY_SHORT, ephemeral=True
-            )
+            await self._notify(interaction, strings.HUNTING_EXPEDITION_BUSY_SHORT)
             return
         if not await self.ensure_captcha(interaction, player):
             return  # locked out, or a verification test was shown
-        await self.show_ground_list(interaction)
+        await self.show_ground_list(interaction, edit=True)
 
     # --- anti-script captcha -------------------------------------------------
 
-    def _captcha_should_test(self, st: "_CaptchaState", now: datetime) -> bool:
-        """Update the timing heuristic and report whether to challenge. Robotic
-        REGULARITY is the tell: gaps between expeditions matching within
-        CAPTCHA_INTERVAL_TOLERANCE, CAPTCHA_STREAK_TRIGGER times running."""
-        triggered = False
+    def _captcha_should_test(self, st: "_CaptchaState", now: datetime) -> str | None:
+        """Update the heuristics and return a trigger reason, or None. Two tells:
+        (1) robotic REGULARITY -- gaps matching within CAPTCHA_INTERVAL_TOLERANCE
+        CAPTCHA_STREAK_TRIGGER times running; (2) VOLUME -- once consecutive
+        expeditions pass CAPTCHA_RUNS_GRACE, each further run rolls a growing
+        chance. A long gap resets the run counter (not a continuous grind)."""
         if st.last_at is not None:
             interval = int((now - st.last_at).total_seconds())
+            if interval > CAPTCHA_RUNS_RESET_GAP:
+                st.runs = 0  # a real break -- this isn't one grind session
             if (
                 st.last_interval > 0
                 and abs(interval - st.last_interval) <= CAPTCHA_INTERVAL_TOLERANCE
@@ -464,9 +474,18 @@ class LegionCog(commands.Cog):
             else:
                 st.streak = 0
             st.last_interval = interval
-            triggered = st.streak >= CAPTCHA_STREAK_TRIGGER
         st.last_at = now
-        return triggered
+        st.runs += 1
+        if st.streak >= CAPTCHA_STREAK_TRIGGER:
+            return "regular-timing"
+        if st.runs > CAPTCHA_RUNS_GRACE:
+            chance = min(
+                CAPTCHA_RUNS_CHANCE_CAP,
+                (st.runs - CAPTCHA_RUNS_GRACE) * CAPTCHA_RUNS_CHANCE_STEP,
+            )
+            if random.random() < chance:
+                return "high-volume"
+        return None
 
     async def ensure_captcha(
         self, interaction: discord.Interaction, player: Player
@@ -475,19 +494,34 @@ class LegionCog(commands.Cog):
         blacklisted/locked out or a test was shown (its outcome resumes)."""
         uid = interaction.user.id
         if uid in self.bot.blacklist:  # bot-wide core blacklist
-            await self._notify(interaction, strings.CAPTCHA_BLACKLISTED)
+            await self._edit_tracked(
+                interaction, content=strings.CAPTCHA_BLACKLISTED,
+                embed=None, view=None,
+            )
             return False
         now = datetime.now(timezone.utc)
         st = self._captcha.setdefault(uid, _CaptchaState())
         if st.locked_until and now < st.locked_until:
-            await self._notify(
+            await self._edit_tracked(
                 interaction,
-                strings.CAPTCHA_LOCKED.format(until=int(st.locked_until.timestamp())),
+                content=strings.CAPTCHA_LOCKED.format(
+                    until=int(st.locked_until.timestamp())
+                ),
+                embed=None, view=None,
             )
             return False
-        # A fail streak (post-lockout) force-tests until a pass clears it.
-        if not (st.fails > 0 or self._captcha_should_test(st, now)):
-            return True
+        # A fail streak (post-lockout) force-tests until a pass clears it;
+        # otherwise the timing/volume heuristics decide.
+        if st.fails > 0:
+            reason = "post-lockout"
+        else:
+            reason = self._captcha_should_test(st, now)
+            if reason is None:
+                return True
+        log.info(
+            "Captcha challenge: user {} ({}, streak={}, runs={}, fails={})",
+            uid, reason, st.streak, st.runs, st.fails,
+        )
         answer = random.randint(1, 9)
         others = random.sample(
             [n for n in range(1, 10) if n != answer], CAPTCHA_BUTTONS - 1
@@ -495,8 +529,10 @@ class LegionCog(commands.Cog):
         choices = others + [answer]
         random.shuffle(choices)
         view = CaptchaView(self, uid, player, answer, choices)
-        await interaction.response.send_message(
-            strings.CAPTCHA_PROMPT.format(answer=answer), view=view, ephemeral=True
+        await self._edit_tracked(
+            interaction,
+            content=strings.CAPTCHA_PROMPT.format(answer=answer),
+            embed=None, view=view,
         )
         view.message = await interaction.original_response()
         return False
@@ -520,12 +556,19 @@ class LegionCog(commands.Cog):
         if secs >= CAPTCHA_BLACKLIST_AT_SECONDS:
             await self.bot.add_to_blacklist(uid)
             self._captcha.pop(uid, None)
+            log.warning(
+                "Captcha blacklist: user {} hit the lockout ceiling "
+                "(added to the bot-wide blacklist)", uid,
+            )
             await interaction.response.edit_message(
                 content=strings.CAPTCHA_BLACKLISTED, embed=None, view=None
             )
             return
         st.locked_until = datetime.now(timezone.utc) + timedelta(seconds=secs)
         st.fails += 1
+        log.info(
+            "Captcha fail: user {} locked {}s (fail #{})", uid, secs, st.fails
+        )
         await interaction.response.edit_message(
             content=strings.CAPTCHA_FAILED.format(
                 until=int(st.locked_until.timestamp())
@@ -765,10 +808,12 @@ class LegionCog(commands.Cog):
     @app_commands.command(name=strings.LEGION_COMMAND_NAME, description=strings.LEGION_COMMAND_DESC)
     @app_commands.guild_only()
     async def legion(self, interaction: discord.Interaction) -> None:
+        log.debug("/legion by user {}", interaction.user.id)
+        await self._defer(interaction)  # public reply
         player = await self.ensure_player(interaction)
         if player is None:
             return
-        await self.show_legion_home(interaction, edit=False)
+        await self.show_legion_home(interaction, edit=True)
 
     async def show_legion_home(
         self, interaction: discord.Interaction, edit: bool = True
@@ -1116,10 +1161,12 @@ class LegionCog(commands.Cog):
 
     @app_commands.command(name=strings.PROFILE_COMMAND_NAME, description=strings.PROFILE_COMMAND_DESC)
     async def profile(self, interaction: discord.Interaction) -> None:
+        log.debug("/account by user {}", interaction.user.id)
+        await self._defer(interaction, ephemeral=True)
         player = await self.ensure_player(interaction)
         if player is None:
             return
-        await self.show_profile(interaction, player, edit=False)
+        await self.show_profile(interaction, player, edit=True)
 
     async def show_profile(
         self, interaction: discord.Interaction, player: Player, edit: bool = True
@@ -1525,6 +1572,9 @@ class LegionCog(commands.Cog):
     ) -> None:
         """Entry: right-click member -> Apps -> 使用道具. Ephemeral picker of
         the INVOKER'S consumables; effects land on the target (revive included)."""
+        log.debug(
+            "use-item menu by user {} on {}", interaction.user.id, member.id
+        )
         if interaction.guild is None:
             return
         player = await self.ensure_player(interaction)
@@ -1637,6 +1687,9 @@ class LegionCog(commands.Cog):
     
     async def showoff_profile_context(self, interaction: discord.Interaction, member: discord.Member) -> None:
         """Allow others to summon a visable profile of a player, but only if they have one (onboarded)."""
+        log.debug(
+            "show-profile menu by user {} on {}", interaction.user.id, member.id
+        )
         if interaction.guild is None:
             return
         if self._patch_blocked():  # frozen blocks ALL commands
@@ -1698,6 +1751,8 @@ class LegionCog(commands.Cog):
     )
     @app_commands.guild_only()
     async def gatherer(self, interaction: discord.Interaction) -> None:
+        log.debug("/resource by user {}", interaction.user.id)
+        await self._defer(interaction, ephemeral=True)
         player = await self.ensure_player(interaction)
         if player is None:
             return
@@ -1710,10 +1765,10 @@ class LegionCog(commands.Cog):
                 ).prefetch_related("material")
             ]
             busy_view = GatherBusyView(self, interaction.user.id, player)
-            await interaction.response.send_message(
+            await self._edit_tracked(
+                interaction,
                 embed=render.gather_busy_embed(activity, possible, self.bot.color),
                 view=busy_view,
-                ephemeral=True,
             )
             busy_view.message = await interaction.original_response()
             return
@@ -1731,10 +1786,10 @@ class LegionCog(commands.Cog):
         ).prefetch_related("material"):
             yields_by_site.setdefault(y.site_id, []).append(y.material.name)
         idle_view = GatherIdleView(self, interaction.user.id, player, sites)
-        await interaction.response.send_message(
+        await self._edit_tracked(
+            interaction,
             embed=render.gather_idle_embed(sites, yields_by_site, self.bot.color),
             view=idle_view,
-            ephemeral=True,
         )
         idle_view.message = await interaction.original_response()
 
@@ -1820,10 +1875,12 @@ class LegionCog(commands.Cog):
     @app_commands.command(name=strings.CRAFTING_COMMAND_NAME, description=strings.CRAFTING_COMMAND_DESC)
     @app_commands.guild_only()
     async def craft_command(self, interaction: discord.Interaction) -> None:
+        log.debug("/make by user {}", interaction.user.id)
+        await self._defer(interaction, ephemeral=True)
         player = await self.ensure_player(interaction)
         if player is None or not await self.ensure_not_afk(interaction, player):
             return
-        await self.show_craft_home(interaction, player, edit=False)
+        await self.show_craft_home(interaction, player, edit=True)
 
     async def _craft_groups(
         self, player: Player

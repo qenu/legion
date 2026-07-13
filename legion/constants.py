@@ -55,6 +55,13 @@ CAPTCHA_LOCKOUT_BASE       = 60     # first lockout (seconds); doubles per fail
 # Once the doubling lockout would reach this, stop escalating and just
 # blacklist the user (in-memory cache, cleared on restart) instead.
 CAPTCHA_BLACKLIST_AT_SECONDS = 3600  # 60 min
+# Volume heuristic: within a continuous grind session, once consecutive
+# expeditions pass the grace count, each further one rolls a GROWING chance of
+# a test (+step per run, capped). A pass or a long break resets the counter.
+CAPTCHA_RUNS_GRACE         = 10     # free consecutive runs before it can fire
+CAPTCHA_RUNS_CHANCE_STEP   = 0.05   # +5% per run beyond the grace count
+CAPTCHA_RUNS_CHANCE_CAP    = 0.75   # ceiling on the per-run chance
+CAPTCHA_RUNS_RESET_GAP     = 3600   # a gap longer than this (s) resets the count
 
 # Settlement presentation: players per embed page (sorted by dealt+taken
 # desc); more players -> public paginator + per-presser ephemeral my-result.
