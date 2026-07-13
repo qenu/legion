@@ -9,8 +9,8 @@ apply (rows are never hard-deleted; the /patch review shows removals).
 """
 
 PATCH: dict = {
-    "version": "0.2.0",
-    "notes": "Added legion level 5 weapons, grounds, and mobs. Added new materials, food, and potions.",
+    "version": "0.2.1",
+    "notes": "Fix Typo",
     "materials": [
         {"key": "iron_ore", "name": "鐵礦石", "rarity": 1,
          "description": "帶著鏽色紋路的礦石，鍛造的基礎。"},
@@ -558,7 +558,7 @@ PATCH: dict = {
          "inputs": [{"material": "spider_fang", "qty": 2},
                     {"material": "wolf_hide", "qty": 3},
                     {"material": "iron_ore", "qty": 1}]},
-        {"key": "brew_rabbit_porridge", "name": "兔肉粥", "skill": "brew",
+        {"key": "cook_rabbit_porridge", "name": "兔肉粥", "skill": "cook",
          "material": "rabbit_porridge", "qty": 1, "req": 2,
          "inputs": [{"material": "rabbit_foot", "qty": 1},
                     {"material": "sunherb", "qty": 2},
