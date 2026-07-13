@@ -265,18 +265,20 @@ def _settlement_field(line, result: SimulationResult) -> tuple[str, str, int]:
     ps = next(
         (p for p in result.party if p.player.id == line.player.id), None
     )
+    # A top-damage or top-tank finish earns a crown -- on the field NAME (where
+    # custom emojis render), since the value goes back inside a code block.
     header = line.player.username
+    if line.top_damage or line.top_tank:
+        header = f"{strings.CROWN_EMOJI} {header}"
     sort_key = 0
-    # The block is a few blank-line-separated groups: combat stats, mastery
-    # changes, then rewards. Top damage/tank wear a crown on their stat line.
+    # Value = blank-line-separated groups: combat stats, mastery changes, rewards.
     groups: list[str] = []
     if ps is not None:
         sort_key = ps.damage_dealt + ps.damage_taken
         header += strings.SKULL_EMOJI if not ps.alive else f" ({ps.current_hp:,}/{ps.max_hp:,} {strings.HEALTHPOINT_TITLE_SHORT})"
-        crown = strings.CROWN_EMOJI
         groups.append("\n".join([
-            f"{crown if line.top_damage else ''}{strings.SETTLE_DAMAGE_DEALT}: {ps.damage_dealt:,}",
-            f"{crown if line.top_tank else ''}{strings.SETTLE_DAMAGE_TAKEN}: {ps.damage_taken:,}",
+            f"{strings.SETTLE_DAMAGE_DEALT}: {ps.damage_dealt:,}",
+            f"{strings.SETTLE_DAMAGE_TAKEN}: {ps.damage_taken:,}",
             f"{strings.SETTLE_HEAL_DONE}: {ps.healing_done:,}",
         ]))
     if mastery_lines:
@@ -292,8 +294,7 @@ def _settlement_field(line, result: SimulationResult) -> tuple[str, str, int]:
         rewards.append(strings.SETTLE_OUTSIDER_TAG)
     if rewards:
         groups.append("\n".join(rewards))
-    # Plain text (no code fence) so the custom crown emoji actually renders.
-    return header, "\n\n".join(groups), sort_key
+    return header, "```\n{}\n```".format("\n\n".join(groups)), sort_key
 
 
 def settlement_embeds(
