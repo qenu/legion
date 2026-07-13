@@ -122,6 +122,7 @@ PATCH: dict = {
         {"key": "exoskeletal", "name": "外骨骼", "stat_bonus_type": "def", "stat_bonus_value": 8},
         {"key": "resilience", "name": "韌性", "stat_bonus_type": "hp", "stat_bonus_value": 40},
         {"key": "sharpness", "name": "鋒利", "stat_bonus_type": "atk", "stat_bonus_value": 10},
+        {"key": "vitality", "name": "活力", "stat_bonus_type": "regen", "stat_bonus_value": 3},
     ],
     "weapons": [
         {
@@ -203,8 +204,8 @@ PATCH: dict = {
         },
         {
             "key": "flame_lizard_bow", "name": "火蜥弓", "category": "bow",
-            "actives": [{"skill": "", "tier": 2, "req": 2},
-                       {"skill": "", "tier": 2, "req": 3}],
+            "actives": [{"skill": "focus_shot", "tier": 2, "req": 2},
+                       {"skill": "flame_arrow", "tier": 2, "req": 3}],
             "passives": [{"skill": "fleetfoot", "tier": 2, "req": 2},
                         {"skill": "focus", "tier": 2, "req": 3},
                         {"skill": "haste", "tier": 1, "req": 4}],
@@ -214,7 +215,8 @@ PATCH: dict = {
             "actives": [],
             "passives": [{"skill": "thick_hide", "tier": 2, "req": 2},
                         {"skill": "grit", "tier": 2, "req": 3},
-                        {"skill": "provoke", "tier": 1, "req": 3}],
+                        {"skill": "provoke", "tier": 1, "req": 4},
+                        {"skill": "vitality", "tier": 1, "req": 3}],
             "main_weapon": False,
         },
         {
