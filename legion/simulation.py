@@ -15,6 +15,7 @@ import time
 from dataclasses import dataclass, field
 
 from maki.cogs.legion.calculator import (
+    CombatantStats,
     eval_formula,
     get_def_bonus,
     get_hp_bonus,
@@ -38,6 +39,7 @@ from maki.cogs.legion.constants import (
     PLAYER_BASE_SPEED,
     PLAYER_BASE_TAUNT,
     SIM_MAX_TICKS,
+    SIM_STATE_CACHE_ATTR,
     TAUNT_AGGRO_WEIGHT,
     EffectType,
     RequirementType,
@@ -60,10 +62,12 @@ from maki.cogs.legion.strings import MYSELF_TITLE
 from maki.cogs.legion.content import PATCH
 
 
-def _category_bonuses() -> dict[str, list[tuple[int, str, int]]]:
+def category_bonuses() -> dict[str, list[tuple[int, str, int]]]:
     """Weapon-category mastery stat bonuses from content, keyed by category
     key -> list of ``(unlock_level, stat_bonus_type, value)``. A player gets
-    every entry whose level is at or below their mastery in that category."""
+    every entry whose level is at or below their mastery in that category.
+    Public: render.py also reads it to show unlocked bonuses on the mastery
+    page."""
     out: dict[str, list[tuple[int, str, int]]] = {}
     for c in PATCH.get("categories", []):
         rows = c.get("bonus_stat")
@@ -119,6 +123,9 @@ class Combatant:
     gauge: int = 0
     stun_rounds: int = 0  # missed turn-opportunities left (rounds, not ticks)
     freeze_rounds: int = 0  # turns still under freeze (each has a chance to skip)
+    # Absorbs ALL damage (hits and DoTs) before HP. Combat-only: granted by
+    # SHIELD skills, never persisted. Re-casting REFRESHES (max), no stacking.
+    shield: int = 0
     dots: list[DoT] = field(default_factory=list)
 
     damage_dealt: int = 0
@@ -168,7 +175,7 @@ class CombatEvent:
     tick: int
     round: int  # 1-based; round r ends with the mob's rth action
     actor: str
-    kind: str  # "skill" | "attack" | "heal" | "stun" | "stunned" | "bleed" | "death" | "passive" | "bleed_tick"
+    kind: str  # "skill" | "attack" | "heal" | "stun" | "stunned" | "bleed" | "death" | "passive" | "bleed_tick" | "shield_applied" | ...
     target: str | None = None
     value: int = 0
     detail: str = ""  # skill/passive name
@@ -219,7 +226,8 @@ async def build_player_state(player: Player, legion_level: int = 0) -> PlayerSta
     taunt = PLAYER_BASE_TAUNT
     regen_bonus = 0  # summed from equipped REGEN passives; read out-of-combat
     # Passive formulas evaluate against BASE stats (before any passive
-    # applies) -- no ordering dependence, no self-compounding.
+    # applies) -- no ordering dependence, no self-compounding. Passives have
+    # no target, so only the {player.*} namespace is exposed.
     base_stats = {
         "atk": atk,
         "attack": atk,
@@ -229,6 +237,14 @@ async def build_player_state(player: Player, legion_level: int = 0) -> PlayerSta
         "hp": player.health_points,
         "max_hp": max_hp,
         "taunt": taunt,
+        "player": CombatantStats(
+            attack=atk,
+            defense=def_,
+            speed=speed,
+            health=player.health_points,
+            max_health=max_hp,
+            taunt=taunt,
+        ),
     }
     skills: list[LoadedSkill] = []
     equipped_cats: dict[str, int] = {}  # category key -> mastery level (deduped)
@@ -295,7 +311,7 @@ async def build_player_state(player: Player, legion_level: int = 0) -> PlayerSta
     # Weapon-category mastery bonuses: applied ONCE per equipped category (a
     # dual-wield of the same type doesn't double them), for every unlock at or
     # below that category's mastery level.
-    cat_bonuses = _category_bonuses()
+    cat_bonuses = category_bonuses()
     for cat_key, mlevel in equipped_cats.items():
         for unlock, stype, val in cat_bonuses.get(cat_key, []):
             if unlock > mlevel:
@@ -340,12 +356,37 @@ async def build_player_state(player: Player, legion_level: int = 0) -> PlayerSta
     )
 
 
+# Shared with repository.py (which cannot import this module -- circular via
+# settlement) so equip/dismantle can invalidate without the import.
+_STATE_CACHE_ATTR = SIM_STATE_CACHE_ATTR
+
+
+async def cached_player_state(player: Player, legion_level: int) -> PlayerState:
+    """Memoized build_player_state, cached ON the Player instance -- a single
+    command often needs the build 2-3 times (regen flush, battle gate, item
+    use) and each build is a handful of queries. Only max_hp/regen_bonus may
+    be read from a cached state (current_hp goes stale as HP moves); combat
+    always builds fresh. Anything that changes the loadout must call
+    invalidate_player_state()."""
+    cached = getattr(player, _STATE_CACHE_ATTR, None)
+    if cached is not None and cached[0] == legion_level:
+        return cached[1]
+    state = await build_player_state(player, legion_level)
+    setattr(player, _STATE_CACHE_ATTR, (legion_level, state))
+    return state
+
+
+def invalidate_player_state(player: Player) -> None:
+    """Drop the memoized build (equip/dismantle changed the loadout)."""
+    player.__dict__.pop(_STATE_CACHE_ATTR, None)
+
+
 async def effective_max_hp(player: Player, legion_level: int) -> int:
     """THE max HP: base + legion bonus + equipped HP passives (mutated).
     Implemented via build_player_state so combat and out-of-combat can never
     drift apart. Future combat-only HP-boost skills must inflate a separate
     field, NOT this -- settlement slices back to this anchor."""
-    return (await build_player_state(player, legion_level)).max_hp
+    return (await cached_player_state(player, legion_level)).max_hp
 
 
 async def effective_max_hp_and_regen(
@@ -353,7 +394,7 @@ async def effective_max_hp_and_regen(
 ) -> tuple[int, int]:
     """One build -> (effective max HP, passive REGEN bonus HP/min). Lets the
     interceptor fetch both without building the player state twice."""
-    state = await build_player_state(player, legion_level)
+    state = await cached_player_state(player, legion_level)
     return state.max_hp, state.regen_bonus
 
 
@@ -420,9 +461,24 @@ def _apply_mob_passive(state: MobState, passive: MobPassive) -> None:
         state.taunt += value
 
 
-def _stats_of(c: Combatant) -> dict:
-    """Formula variables exposed to skill/passive expressions."""
-    return {
+def _combatant_stats(c: Combatant) -> CombatantStats:
+    """Snapshot a combatant's LIVE numbers into the formula namespace."""
+    return CombatantStats(
+        attack=c.atk,
+        defense=c.def_,
+        speed=c.speed,
+        health=c.current_hp,
+        max_health=c.max_hp,
+        taunt=c.taunt,
+        shield=c.shield,
+    )
+
+
+def _stats_of(c: Combatant, target: Combatant | None = None) -> dict:
+    """Formula variables exposed to skill/passive expressions: the flat
+    legacy vars (the actor's) plus the ``player`` namespace, and ``target``
+    when the expression has someone on the receiving end."""
+    stats: dict = {
         "atk": c.atk,
         "attack": c.atk,
         "def": c.def_,
@@ -431,13 +487,19 @@ def _stats_of(c: Combatant) -> dict:
         "hp": c.current_hp,
         "max_hp": c.max_hp,
         "taunt": c.taunt,
+        "player": _combatant_stats(c),
     }
+    if target is not None:
+        stats["target"] = _combatant_stats(target)
+    return stats
 
 
-def _skill_value(loaded: LoadedSkill, actor: Combatant) -> int:
-    """Resolve a skill's formula against the actor's LIVE stats, then apply
-    the tier+mutation scale."""
-    return max(0, round(eval_formula(loaded.formula, _stats_of(actor)) * loaded.scale))
+def _skill_value(loaded: LoadedSkill, actor: Combatant, target: Combatant) -> int:
+    """Resolve a skill's formula against the actor's LIVE stats (with the
+    target's exposed as {target.*}), then apply the tier+mutation scale."""
+    return max(
+        0, round(eval_formula(loaded.formula, _stats_of(actor, target)) * loaded.scale)
+    )
 
 
 # --- the fight ---------------------------------------------------------------
@@ -478,6 +540,15 @@ def _check_requirements(
             )
 
 
+def _absorb(target: Combatant, dmg: int) -> None:
+    """Land ``dmg`` on the target: the shield soaks first, HP takes the rest.
+    Damage stats elsewhere still count the FULL amount -- a shield tank
+    absorbing hits earned their top-tank credit."""
+    absorbed = min(target.shield, dmg)
+    target.shield -= absorbed
+    target.current_hp = max(0, target.current_hp - (dmg - absorbed))
+
+
 def _deal_damage(
     attacker: Combatant,
     target: Combatant,
@@ -488,7 +559,7 @@ def _deal_damage(
     detail: str = "",
 ) -> None:
     dmg = max(1, raw - target.def_)
-    target.current_hp = max(0, target.current_hp - dmg)
+    _absorb(target, dmg)
     attacker.damage_dealt += dmg
     target.damage_taken += dmg
     events.append(
@@ -526,8 +597,9 @@ def _use_skill(
     actor.cooldowns[skill.id] = actor.turns_taken + loaded.cooldown
 
     # Formula resolves against LIVE stats; it fully owns any ATK scaling
-    # (write "{atk} + 12" for the old base-attack behavior).
-    value = _skill_value(loaded, actor)
+    # (write "{atk} + 12" for the old base-attack behavior). The ENEMY is
+    # what "{target.*}" refers to -- even for heals, which land on an ally.
+    value = _skill_value(loaded, actor, enemy)
     if skill.effect_type == EffectType.DAMAGE:
         _deal_damage(
             actor,
@@ -632,6 +704,21 @@ def _use_skill(
                 detail=skill.name,
             )
         )
+    elif skill.effect_type == EffectType.SHIELD:
+        # Self-shield: the ACTOR gains shield points that deplete before HP
+        # (all damage types). Re-casting REFRESHES to the higher value -- no
+        # stacking, so a cd-0 shield can't snowball.
+        actor.shield = max(actor.shield, value)
+        events.append(
+            CombatEvent(
+                tick=ctx.tick,
+                round=ctx.round + 1,
+                actor=actor.name,
+                kind="shield_applied",
+                value=value,
+                detail=skill.name,
+            )
+        )
     elif skill.effect_type == EffectType.FREEZE:
         # Freeze: base DoT (like the others) that ALSO lingers as a status --
         # each of the victim's next turns has a chance to be skipped (resolved
@@ -728,10 +815,11 @@ def _dot_hurt(
     ctx: BattleContext,
     events: list[CombatEvent],
 ) -> None:
-    """Apply one chunk of DoT damage, credit the source, and log it."""
+    """Apply one chunk of DoT damage, credit the source, and log it. The
+    shield soaks DoTs too -- it absorbs ALL damage types before HP."""
     if dmg <= 0:
         return
-    combatant.current_hp = max(0, combatant.current_hp - dmg)
+    _absorb(combatant, dmg)
     combatant.damage_taken += dmg
     source.damage_dealt += dmg
     events.append(
@@ -839,6 +927,15 @@ def run_simulation(
                 continue  # stunned mid-tick by the mob; gauge kept for later
             actor.gauge -= ATB_THRESHOLD
             if isinstance(actor, MobState):
+                # Round boundary: dots tick ONCE per full mob gauge, BEFORE
+                # stun/freeze resolve -- a stunned mob still bleeds (stunning
+                # must never pause the party's DoTs), and a bleeding combatant
+                # can die of wounds here, including the mob itself.
+                for combatant in (*party, mob):
+                    if combatant.alive and combatant.dots:
+                        _apply_dots(combatant, ctx, events, rng)
+                if over() or not actor.alive:
+                    continue
                 if actor.stun_rounds > 0:
                     # A stunned mob LOSES this turn: no action, and the round
                     # stays open -- the doom clock only counts real actions,
@@ -867,14 +964,6 @@ def run_simulation(
                             )
                         )
                         continue
-                # Round boundary: dots tick ONCE per round, just before the
-                # mob acts -- a bleeding combatant can die of wounds here,
-                # including the mob itself, before it gets its turn.
-                for combatant in (*party, mob):
-                    if combatant.alive and combatant.dots:
-                        _apply_dots(combatant, ctx, events, rng)
-                if over() or not actor.alive:
-                    continue
                 _mob_act(actor, party, ctx, events, rng)
             else:
                 if actor.freeze_rounds > 0:

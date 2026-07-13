@@ -6,7 +6,7 @@ in its ``__init__``.
 """
 
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
@@ -26,6 +26,7 @@ from maki.cogs.legion.constants import (
     BASE_REGEN_PER_MINUTE,
     REVIVE_HP,
     REVIVE_MINUTES,
+    SIM_STATE_CACHE_ATTR,
     ACTIVE_TOUCH_THROTTLE_MINUTES,
     ACTIVE_WINDOW_DAYS,
     CONTRI_PER_MAT_RARITY,
@@ -198,14 +199,22 @@ class LegionRepo:
         )
         return legion
 
+    async def ensure_daily_reset(self, legion: Legion) -> None:
+        """Lazy daily rollover: zero ``daily_kills`` once the (UTC) date has
+        moved past the last reset. Called before every read or bump of the
+        counter -- no scheduler needed."""
+        now = datetime.now(timezone.utc)
+        last = legion.last_reset_at
+        if last is not None and last.astimezone(timezone.utc).date() >= now.date():
+            return
+        legion.daily_kills = 0
+        legion.last_reset_at = now
+        await legion.save(update_fields=["daily_kills", "last_reset_at"])
+
     async def add_kills(self, legion: Legion, kills: int = 1) -> None:
+        await self.ensure_daily_reset(legion)
         legion.daily_kills += kills
         await legion.save(update_fields=["daily_kills"])
-
-    async def reset_daily(self, legion: Legion) -> None:
-        legion.daily_kills = 0
-        legion.last_reset_at = datetime.now().astimezone()
-        await legion.save(update_fields=["daily_kills", "last_reset_at"])
 
     async def add_exp(self, legion: Legion, pts: int) -> bool:
         """Bank legion exp (NO auto-level -- upgrading is a manual, perm-gated
@@ -436,6 +445,10 @@ class InventoryRepo:
             )
             player_weapon.equipped_slot = slot
             await player_weapon.save(update_fields=["equipped_slot"])
+            # Loadout changed: drop the per-command player-state memo
+            # (simulation.cached_player_state) so stale max HP/passives
+            # can't be read later in the same command.
+            player.__dict__.pop(SIM_STATE_CACHE_ATTR, None)
             return slot
 
     async def dismantle_salvage(

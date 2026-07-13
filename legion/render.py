@@ -7,6 +7,7 @@ import discord
 
 from maki.cogs.legion import strings
 from maki.cogs.legion.calculator import (
+    CombatantStats,
     eval_formula,
     legion_level_cost,
     mastery_level_cost,
@@ -42,12 +43,24 @@ from maki.cogs.legion.model.model import (
     WeaponMastery,
 )
 from maki.cogs.legion.settlement import SettlementReport
-from maki.cogs.legion.simulation import CombatEvent, SimulationResult
+from maki.cogs.legion.simulation import (
+    CombatEvent,
+    SimulationResult,
+    category_bonuses,
+)
 
 # Display stats for skill-value previews: effect_value / stat_bonus_value are
-# FORMULA STRINGS now ("{atk} + 12"); detail embeds resolve them against base
-# player stats (combat resolves against live stats at use time, so shown
+# FORMULA STRINGS ("{atk} + 12", "{target.max_health}*2%"); detail embeds
+# resolve them against base player stats, with a same-sized dummy standing in
+# for {target.*} (combat resolves against live stats at use time, so shown
 # numbers are a baseline, not a promise).
+_BASE_ACTOR = CombatantStats(
+    attack=PLAYER_BASE_ATK,
+    defense=PLAYER_BASE_DEF,
+    speed=PLAYER_BASE_SPEED,
+    health=100,
+    max_health=100,
+)
 _BASE_STATS = {
     "atk": PLAYER_BASE_ATK,
     "attack": PLAYER_BASE_ATK,
@@ -56,6 +69,8 @@ _BASE_STATS = {
     "speed": PLAYER_BASE_SPEED,
     "hp": 100,
     "max_hp": 100,  # Player.max_health_points base default
+    "player": _BASE_ACTOR,
+    "target": _BASE_ACTOR,
 }
 
 
@@ -468,11 +483,17 @@ def profile_embed(
     return embed
 
 
-def _mastery_field(name: str, level: int, exp: int) -> tuple[str, str]:
+def _mastery_field(
+    name: str,
+    level: int,
+    exp: int,
+    bonuses: list[tuple[str, int]] | None = None,
+) -> tuple[str, str]:
     """``(field_name, field_value)`` for one mastery: level + zone tag in the
     name, the emoji bar + exp progress in the value. One field per mastery --
     a 10-segment bar is ~380 chars, so stacking them in one field would blow
-    the 1024 cap."""
+    the 1024 cap. ``bonuses`` = the UNLOCKED category stat bonuses as
+    ``(stat_bonus_type, value)`` -- shown as one extra line, biggest first."""
     zone = (
         strings.LOCK_EMOJI
         if level >= MASTERY_HARD_CAP
@@ -484,6 +505,17 @@ def _mastery_field(name: str, level: int, exp: int) -> tuple[str, str]:
     else:
         need = mastery_level_cost(level + 1)
         value = f"{progress_bar(exp / max(1, need) * 100)}\n-# {exp:,}/{need:,}"
+    if bonuses:
+        # Aggregate per stat (a stat may unlock at several levels), then
+        # biggest bonus first.
+        totals: dict[str, int] = {}
+        for stype, val in bonuses:
+            totals[stype] = totals.get(stype, 0) + val
+        parts = ", ".join(
+            f"{strings.STAT_NAMES.get(stype, stype)}+{val}"
+            for stype, val in sorted(totals.items(), key=lambda kv: kv[1], reverse=True)
+        )
+        value += f"\n-# {parts}"
     return field_name, value
 
 
@@ -499,13 +531,19 @@ def mastery_embed(
     embed = discord.Embed(title=f"\u00b7 {section}", color=color)
     if not masteries:
         embed.description = strings.MASTERY_NONE
+    cat_bonuses = category_bonuses() if weapons else {}
     for m in masteries:
-        display = (
-            m.category.name
-            if weapons
-            else strings.LIFE_SKILL_NAMES.get(m.skill.value, m.skill.value)
-        )
-        name, value = _mastery_field(display, m.level, m.exp)
+        if weapons:
+            display = m.category.name
+            unlocked = [
+                (stype, val)
+                for unlock, stype, val in cat_bonuses.get(m.category.key, [])
+                if unlock <= m.level
+            ]
+        else:
+            display = strings.LIFE_SKILL_NAMES.get(m.skill.value, m.skill.value)
+            unlocked = []
+        name, value = _mastery_field(display, m.level, m.exp, bonuses=unlocked)
         embed.add_field(name=name, value=value, inline=False)
     embed.set_footer(
         text=strings.MASTERY_FOOTER.format(

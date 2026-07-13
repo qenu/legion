@@ -170,6 +170,7 @@ COMBAT_EVENT = {
     "freeze_effect": "**{actor}** 遭到冰凍，無法行動！",
     "death": "**{actor}** 倒下了!",
     "passive": "**{actor}** 的 __{detail}__ 發動了！",
+    "shield_applied": "**{actor}** 使用 __{detail}__ 施加了護盾，獲得了 **{value:,}** 點護盾值",
 }
 COMBAT_ROUND = "戰鬥紀錄 第 {round_no} / {rounds_limit} 回合"
 COMBAT_ROUND_EMPTY = "沒有任何事件發生。"
@@ -301,6 +302,8 @@ COOK_TITLE = "烹飪"
 BREW_TITLE = "釀造"
 CRAFT_PICK = "製作什麼？"
 CRAFT_MADE = "製作了 **{material}**×{qty:,} ！"
+# Craft mastery perk landed: the roll doubled the output.
+CRAFT_MADE_DOUBLE = "製作了 **{material}**×{qty:,} ！✨ 手感絕佳，產量翻倍了！"
 CRAFT_MAT_DETAIL = "{name}×{count:,}"
 CRAFT_NOTHING = "這個配方什麼都做不出來…"
 CRAFT_NEED_MASTERY = "需要 {skill} 熟練度 Lv{req} 以上"
@@ -367,10 +370,11 @@ SKILL_ACTIVE_DESCRIPTION = {
     "damage": "對目標造成 {value:,} 點傷害，",
     "heal": "對目標恢復 {value:,} 點生命值，",
     "stun": "對目標造成眩暈，持續 {value:,} 回合，",
-    "bleed": "對目標造成流血，每回合 {value:,} 點傷害，",
-    "poison": "對目標造成中毒，每回合 {value:,} 點傷害，",
-    "burn": "對目標造成燃燒，每回合 {value:,} 點傷害，",
-    "freeze": "對目標造成冰凍，每回合 {value:,} 點傷害，",
+    "bleed": "對目標造成流血，每回合造成 {value:,} 點傷害，",
+    "poison": "對目標造成中毒，每回合造成 {value:,} 點傷害，",
+    "burn": "對目標造成燃燒，每回合造成 {value:,} 點傷害，",
+    "freeze": "對目標造成冰凍，每回合造成 {value:,} 點傷害，",
+    "shield": "對自己施加 {value:,} 點的護盾，",
 }
 SKILL_PASSIVE_DESCRIPTION = {
     "hp": "生命值 +{value:,}",
@@ -381,7 +385,7 @@ SKILL_PASSIVE_DESCRIPTION = {
     "regen": "每分鐘恢復 {value:,} 點生命值",
 }
 SKILL_TIER_TAG = "T{tier}"
-SKILL_LOCKED_TAG = "🔒 需要{category}精通 Lv{req} 解鎖"
+SKILL_LOCKED_TAG = "{LOCK_EMOJI} 需要{category}精通 Lv{req} 解鎖"
 
 # --- craft detail / confirm flow ---
 CRAFT_ACTION = "製作"

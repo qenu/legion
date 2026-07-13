@@ -25,7 +25,7 @@ from maki.cogs.legion.constants import (
     RequirementType,
     StatBonusType,
 )
-from maki.cogs.legion.calculator import FORMULA_VARS, eval_formula
+from maki.cogs.legion.calculator import CombatantStats, FORMULA_VARS, eval_formula
 from maki.cogs.legion.content import PATCH
 from maki.cogs.legion.model.model import (
     ActiveSkill,
@@ -152,14 +152,24 @@ def validate_patch(patch: dict | None = None) -> list[str]:
             )
         if kind == "potion" and not m.get("stat_bonus_value"):
             errors.append(f"materials '{m.get('key')}': potion needs stat_bonus_value")
-    _dummy_stats = {v: 10 for v in FORMULA_VARS}
+    # Actives get both namespaces; passives are player-only, so a passive
+    # formula referencing {target.*} fails right here at review time.
+    _dummy_actor = CombatantStats(
+        attack=10, defense=10, speed=10, health=10, max_health=10, taunt=10
+    )
+    _active_stats = {
+        **{v: 10 for v in FORMULA_VARS},
+        "player": _dummy_actor,
+        "target": _dummy_actor,
+    }
+    _passive_stats = {**{v: 10 for v in FORMULA_VARS}, "player": _dummy_actor}
     for s in p.get("active_skills", []):
         if s.get("effect_type") not in valid_effects:
             errors.append(
                 f"active_skills '{s.get('key')}': bad effect '{s.get('effect_type')}'"
             )
         try:
-            eval_formula(s.get("effect_value", 0), _dummy_stats)
+            eval_formula(s.get("effect_value", 0), _active_stats)
         except ValueError as e:
             errors.append(f"active_skills '{s.get('key')}': {e}")
     for s in p.get("passive_skills", []):
@@ -168,7 +178,7 @@ def validate_patch(patch: dict | None = None) -> list[str]:
                 f"passive_skills '{s.get('key')}': bad stat '{s.get('stat_bonus_type')}'"
             )
         try:
-            eval_formula(s.get("stat_bonus_value", 0), _dummy_stats)
+            eval_formula(s.get("stat_bonus_value", 0), _passive_stats)
         except ValueError as e:
             errors.append(f"passive_skills '{s.get('key')}': {e}")
 

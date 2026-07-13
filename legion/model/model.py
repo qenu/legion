@@ -140,8 +140,10 @@ class ActiveSkill(Model):
     description = fields.TextField(null=True)
 
     effect_type = fields.CharEnumField(EffectType)
-    # Formula string: "20", "{atk} + 12", "{atk}*10% + 20" -- resolved at
-    # use time against the actor's stats (calculator.eval_formula).
+    # Formula string: "20", "{atk} + 12", "{player.attack}*20% + 5",
+    # "{target.missing_health}*5%" -- resolved at use time against the
+    # actor's live stats, with the enemy exposed as {target.*}
+    # (calculator.eval_formula).
     effect_value = fields.CharField(max_length=64, default="0")
 
     cooldown = fields.IntField(
@@ -228,6 +230,8 @@ class Legion(Model):
     level = fields.IntField(default=1)
     exp = fields.IntField(default=0)
 
+    # Kills since the last (UTC) daily rollover -- reset lazily by
+    # LegionRepo.ensure_daily_reset whenever the counter is read or bumped.
     daily_kills = fields.IntField(default=0)
     last_reset_at = fields.DatetimeField(auto_now_add=True)
 
@@ -565,7 +569,8 @@ class GatherSite(Model):
 
 
 class SiteYield(Model):
-    """A gather site yield table entry, rolled per 30-min chunk at stop."""
+    """A gather site yield table entry, rolled per GATHER_CHUNK_MINUTES
+    (20-min) chunk at stop."""
 
     site = fields.ForeignKeyField("legion.GatherSite", related_name="yields")
     material = fields.ForeignKeyField("legion.Material", related_name="gathered_from")

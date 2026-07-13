@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Sequence
 
 from maki.cogs.legion.constants import (
+    CRAFT_DOUBLE_CHANCE_PER_LEVEL,
     GATHER_BAG_BASE_HOURS,
     SKILL_TIER_MAX,
     SKILL_TIER_MULTIPLIERS,
@@ -54,14 +55,18 @@ def get_regen_rate(level: int) -> int:
 
 def get_mob_stats(mob: Mob, danger: int, player_count: int) -> dict:
     """Mob stats scale off the hunting ground's DANGER rating + party size.
-    Legion level never scales mobs -- it only unlocks grounds (no treadmill)."""
+    Legion level never scales mobs -- it only unlocks grounds (no treadmill).
+
+    Party size scales HP hard (the kill takes teamwork) but atk/def/speed only
+    gently -- grouping up must never make each member WORSE off than soloing.
+    """
     danger_modifier = 1 + (danger * 0.1)
     player_modifier = 1 + (player_count * 0.2)
     player_modifier_low = 1 + (player_count * 0.05)
 
     return {
         "hp": int(mob.base_hp * danger_modifier * player_modifier),
-        "atk": int(mob.base_atk * danger_modifier * player_modifier),
+        "atk": int(mob.base_atk * danger_modifier * player_modifier_low),
         "def": int(mob.base_def * danger_modifier * player_modifier_low),
         "speed": int(mob.base_speed * danger_modifier * player_modifier_low),
     }
@@ -222,13 +227,54 @@ def quality_from_mutations(mutations: dict[str, int]) -> WeaponQuality:
 
 
 # --- skill value formulas -----------------------------------------------------
-# effect_value / stat_bonus_value are STRINGS: "20", "{atk} + 12",
-# "{atk}*10% + 20", "{def}*15%". Evaluated safely (AST whitelist, no eval)
-# against the actor's stats; N% -> N/100.
+# effect_value / stat_bonus_value are STRINGS, evaluated safely (AST
+# whitelist, no raw eval) with N% -> N/100. Two variable styles:
+#   * legacy flat vars against the ACTOR: "{atk} + 12", "{def}*15%"
+#   * namespaced dotted vars: "{player.attack}*20% + 5", "{target.max_health}*2%",
+#     "{target.missing_health}*5%" -- `player` is the ACTOR, `target` the
+#     combatant the skill lands on. Passives have no target (validated).
 
 import ast as _ast
 
 FORMULA_VARS = ("atk", "attack", "def", "defense", "speed", "hp", "max_hp")
+
+
+@dataclass
+class CombatantStats:
+    """A combatant's live numbers exposed to formulas via the ``player`` /
+    ``target`` namespaces ("{player.attack}", "{target.missing_health}", ...).
+    Pure data: builders snapshot a Combatant (or base stats) into this."""
+
+    attack: int = 0
+    defense: int = 0
+    speed: int = 0
+    health: int = 0
+    max_health: int = 0
+    taunt: int = 0
+    shield: int = 0  # current shield points (combat-only, absorbs before HP)
+
+    @property
+    def missing_health(self) -> int:
+        return max(0, self.max_health - self.health)
+
+
+# The only attributes a formula may reach on a CombatantStats namespace.
+COMBATANT_FORMULA_ATTRS = frozenset(
+    {
+        "attack",
+        "defense",
+        "speed",
+        "health",
+        "max_health",
+        "missing_health",
+        "taunt",
+        "shield",
+    }
+)
+
+_FORMULA_NAME_RE = re.compile(
+    r"\{([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)?)\}"
+)
 
 _ALLOWED_NODES = (
     _ast.Expression,
@@ -246,14 +292,28 @@ _ALLOWED_NODES = (
 
 def eval_formula(expr: str | int | float, stats: dict | None = None) -> int:
     """Resolve a value formula against ``stats``. Plain numbers pass
-    through. Unknown variables or disallowed syntax raise ValueError (the
-    patch validator catches these at review time)."""
+    through. ``stats`` holds the flat legacy vars plus optional ``player`` /
+    ``target`` CombatantStats namespaces for the dotted style. Unknown
+    variables or disallowed syntax raise ValueError (the patch validator
+    catches these at review time)."""
     if isinstance(expr, (int, float)):
         return round(expr)
     s = str(expr)
-    stats = stats or {}
-    for key in FORMULA_VARS:
-        s = s.replace("{" + key + "}", str(stats.get(key, 0)))
+    resolved = stats or {}
+
+    def _substitute(match: re.Match) -> str:
+        name = match.group(1)
+        if "." in name:
+            ns, _, attr = name.partition(".")
+            obj = resolved.get(ns)
+            if isinstance(obj, CombatantStats) and attr in COMBATANT_FORMULA_ATTRS:
+                return str(getattr(obj, attr))
+            raise ValueError(f"unknown variable in formula: {expr!r} ({{{name}}})")
+        if name in FORMULA_VARS:
+            return str(resolved.get(name, 0))
+        raise ValueError(f"unknown variable in formula: {expr!r} ({{{name}}})")
+
+    s = _FORMULA_NAME_RE.sub(_substitute, s)
     if "{" in s or "}" in s:
         raise ValueError(f"unknown variable in formula: {expr!r}")
     s = re.sub(r"(\d+(?:\.\d+)?)\s*%", r"(\1/100)", s)
@@ -285,6 +345,15 @@ def mutated(value: int, pct: int | None) -> int:
     if pct is None:
         return value
     return max(0, round(value * pct / 100))
+
+
+# --- Crafting -------------------------------------------------------------
+
+
+def craft_double_chance(level: int) -> float:
+    """Chance a cook/brew craft produces DOUBLE output -- the craft mastery
+    perk (per-level, linear)."""
+    return min(1.0, max(0, level) * CRAFT_DOUBLE_CHANCE_PER_LEVEL)
 
 
 # --- Gathering ----------------------------------------------------------------

@@ -9,9 +9,10 @@ MASTERY_SOFT_CAP = 5
 MASTERY_HARD_CAP = 7
 MASTERY_EXP_BASE = 60  # exp to go from level n-1 to n costs n * MASTERY_EXP_BASE
 # Inactivity decay: above-soft-cap mastery erodes while a player is away. No
-# erosion for the first grace window, then this many exp/day (lazily applied
-# when the player is next seen), never below the soft-cap floor.
-MASTERY_EROSION_GRACE_HOURS = 24
+# erosion for the first grace window (generous: a weekend away costs nothing),
+# then this many exp/day (lazily applied when the player is next seen), never
+# below the soft-cap floor.
+MASTERY_EROSION_GRACE_HOURS = 72
 MASTERY_EROSION_PER_DAY = 60
 
 # Settlement: mastery pts awarded per dungeon run.
@@ -83,8 +84,11 @@ LEGION_EXP_BASE = 100  # level n costs n * LEGION_EXP_BASE exp
 # gauge. Skill cooldowns count the ACTOR'S OWN TURNS (speed-independent
 # rotation); stun and bleed durations are ROUNDS (stun effect_value = turns
 # the target loses; a stunned mob's skipped turn does NOT advance the doom
-# clock or tick bleeds).
+# clock, but DoTs still tick on it -- stunning never pauses your bleeds).
 ATB_THRESHOLD = 100  # gauge needed to act; gauge += speed per tick
+# Attribute name for the per-command Player-state memo (see
+# simulation.cached_player_state); repository.py pops it on equip/dismantle.
+SIM_STATE_CACHE_ATTR = "_sim_state_cache"
 SIM_MAX_TICKS = 600  # hard stop: unresolved fight counts as a loss
 BLEED_DURATION = 3  # bleed deals effect_value once per ROUND, this many rounds
 # Status DoTs: each also deals its base effect_value per round (the "_tick"),
@@ -184,6 +188,10 @@ BASE_REGEN_PER_MINUTE = 1
 
 CRAFT_MASTERY_PTS = 1  # cook/brew mastery pts per successful craft
 
+# Craft mastery perk: each cook/brew level adds this chance for a craft to
+# produce DOUBLE output. At the hard cap (7) that's 35%.
+CRAFT_DOUBLE_CHANCE_PER_LEVEL = 0.05
+
 
 class SkillTier(IntEnum):
     """Skill tiers scale effect/stat values. Content may write any int;
@@ -214,6 +222,7 @@ class EffectType(StrEnum):
     POISON = "poison"
     BURN = "burn"
     FREEZE = "freeze"
+    SHIELD = "shield"  # self-shield: absorbs damage before HP (combat-only)
 
 
 class StatBonusType(StrEnum):
