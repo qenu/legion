@@ -14,6 +14,7 @@ from maki.cogs.legion.constants import (
     WeaponSlot,
 )
 
+
 class Player(Model):
     """A player in the game, identified by their Discord ID."""
 
@@ -30,12 +31,12 @@ class Player(Model):
 
     # Food buff: +rate HP/min until the timestamp (lazy, computed on read;
     # db_default so the AddField migration backfills the populated table).
-    regen_buff_rate  = fields.IntField(default=0, db_default=0)
+    regen_buff_rate = fields.IntField(default=0, db_default=0)
     regen_buff_until = fields.DatetimeField(null=True)
     # Timed combat-stat buffs from food: {stat_type: {"value": int, "until": epoch}}.
     # atk/def/speed/taunt; HP regen stays on regen_buff_* above. Nullable so the
     # AddField migration is safe on the populated table (reads guard `or {}`).
-    stat_buffs       = fields.JSONField(default=dict, null=True)
+    stat_buffs = fields.JSONField(default=dict, null=True)
 
     legion = fields.ForeignKeyField(
         "legion.Legion", null=True, on_delete=fields.SET_NULL
@@ -49,7 +50,7 @@ class Player(Model):
 
     # Per-legion status; reset to 0 when switching legions. Earned by donating
     # (qty * rarity) and the first dungeon fight of each UTC day.
-    contribution  = fields.IntField(default=0)
+    contribution = fields.IntField(default=0)
     last_daily_at = fields.DatetimeField(null=True)  # last daily-contri award
     last_supply_at = fields.DatetimeField(null=True)  # last daily-supply claim
 
@@ -60,52 +61,54 @@ class Player(Model):
     # Equipped weapons live on PlayerWeapon.equipped_slot (a Player->PlayerWeapon
     # FK would be a cyclic reference Tortoise's schema generator rejects).
 
-    class Meta: # type: ignore
+    class Meta:  # type: ignore
         table = "players"
 
     def __str__(self) -> str:
         return f"Player({self.discord_id}, {self.username})"
-    
+
 
 class WeaponMastery(Model):
     """Represents a player weapon-category mastery."""
 
     player = fields.ForeignKeyField("legion.Player", related_name="weapon_masteries")
-    category = fields.ForeignKeyField("legion.WeaponCategory", related_name="weapon_masteries")
+    category = fields.ForeignKeyField(
+        "legion.WeaponCategory", related_name="weapon_masteries"
+    )
     level = fields.IntField(default=0)
     exp = fields.IntField(default=0)
 
-    class Meta: # type: ignore
+    class Meta:  # type: ignore
         table = "weapon_masteries"
         unique_together = ("player", "category")
 
     def __str__(self) -> str:
         return f"WeaponMastery(Player: {self.player.discord_id}, Category: {self.category.name}, Level: {self.level})"
-    
+
 
 class WeaponCategory(Model):
     """Represents a category of weapons."""
 
     # Stable content identity: patching & references key off this; `name`
     # is display-only and freely patchable/localizable.
-    key    = fields.CharField(max_length=64, unique=True, null=True)
+    key = fields.CharField(max_length=64, unique=True, null=True)
     status = fields.CharEnumField(ContentStatus, default=ContentStatus.ENABLED)
     name = fields.CharField(max_length=32)
     description = fields.TextField(null=True)
 
-    class Meta: # type: ignore
+    class Meta:  # type: ignore
         table = "weapon_categories"
 
     def __str__(self) -> str:
         return f"WeaponCategory({self.name})"
-    
+
 
 class Weapon(Model):
     """Represents a weapon in the game."""
 
     # Stable content identity: patching & references key off this; `name`
     # is display-only and freely patchable/localizable.
-    key    = fields.CharField(max_length=64, unique=True, null=True)
+    key = fields.CharField(max_length=64, unique=True, null=True)
     status = fields.CharEnumField(ContentStatus, default=ContentStatus.ENABLED)
     name = fields.CharField(max_length=32)
     category = fields.ForeignKeyField("legion.WeaponCategory", related_name="weapons")
@@ -119,19 +122,19 @@ class Weapon(Model):
 
     # Starter weapons are named in constants.STARTER_WEAPONS, not flagged here.
 
-    class Meta: # type: ignore
+    class Meta:  # type: ignore
         table = "weapons"
 
     def __str__(self) -> str:
         return f"Weapon({self.name}, Category: {self.category.name})"
-    
+
 
 class ActiveSkill(Model):
     """Represents an active skill that a player can use."""
 
     # Stable content identity: patching & references key off this; `name`
     # is display-only and freely patchable/localizable.
-    key    = fields.CharField(max_length=64, unique=True, null=True)
+    key = fields.CharField(max_length=64, unique=True, null=True)
     status = fields.CharEnumField(ContentStatus, default=ContentStatus.ENABLED)
     name = fields.CharField(max_length=32)
     description = fields.TextField(null=True)
@@ -141,21 +144,23 @@ class ActiveSkill(Model):
     # use time against the actor's stats (calculator.eval_formula).
     effect_value = fields.CharField(max_length=64, default="0")
 
-    cooldown = fields.IntField(default=0)  # Cooldown in the wielder's own turns (0 = every turn)
+    cooldown = fields.IntField(
+        default=0
+    )  # Cooldown in the wielder's own turns (0 = every turn)
 
-    class Meta: # type: ignore
+    class Meta:  # type: ignore
         table = "active_skills"
 
     def __str__(self) -> str:
         return f"ActiveSkill({self.name}, Effect: {self.effect_type} {self.effect_value}, Cooldown: {self.cooldown})"
-    
+
 
 class PassiveSkill(Model):
     """Represents a passive skill that a player can have."""
 
     # Stable content identity: patching & references key off this; `name`
     # is display-only and freely patchable/localizable.
-    key    = fields.CharField(max_length=64, unique=True, null=True)
+    key = fields.CharField(max_length=64, unique=True, null=True)
     status = fields.CharEnumField(ContentStatus, default=ContentStatus.ENABLED)
     name = fields.CharField(max_length=32)
     description = fields.TextField(null=True)
@@ -164,12 +169,12 @@ class PassiveSkill(Model):
     # Formula string, evaluated against BASE stats (before passives apply).
     stat_bonus_value = fields.CharField(max_length=64, default="0")
 
-    class Meta: # type: ignore
+    class Meta:  # type: ignore
         table = "passive_skills"
 
     def __str__(self) -> str:
         return f"PassiveSkill({self.name})"
-    
+
 
 class WeaponActiveSkill(Model):
     """Represents the relationship between a weapon and an active skill."""
@@ -178,60 +183,66 @@ class WeaponActiveSkill(Model):
     active_skill = fields.ForeignKeyField("legion.ActiveSkill", related_name="weapons")
 
     tier = fields.IntField(default=1)  # Tier of unlock for this weapon
-    mastery_level_required = fields.IntField(default=0)  # Mastery level required to unlock this skill
+    mastery_level_required = fields.IntField(
+        default=0
+    )  # Mastery level required to unlock this skill
 
-    class Meta: # type: ignore
+    class Meta:  # type: ignore
         table = "weapon_active_skills"
         unique_together = ("weapon", "active_skill")
 
     def __str__(self) -> str:
         return f"WeaponActiveSkill(Weapon: {self.weapon.name}, ActiveSkill: {self.active_skill.name}, Tier: {self.tier}, Mastery Level Required: {self.mastery_level_required})"
-    
+
 
 class WeaponPassiveSkill(Model):
     """Represents the relationship between a weapon and a passive skill."""
 
     weapon = fields.ForeignKeyField("legion.Weapon", related_name="passive_skills")
-    passive_skill = fields.ForeignKeyField("legion.PassiveSkill", related_name="weapons")
+    passive_skill = fields.ForeignKeyField(
+        "legion.PassiveSkill", related_name="weapons"
+    )
 
     tier = fields.IntField(default=1)  # Tier of unlock for this weapon
-    mastery_level_required = fields.IntField(default=0)  # Mastery level required to unlock this skill
+    mastery_level_required = fields.IntField(
+        default=0
+    )  # Mastery level required to unlock this skill
 
-    class Meta: # type: ignore
+    class Meta:  # type: ignore
         table = "weapon_passive_skills"
         unique_together = ("weapon", "passive_skill")
 
     def __str__(self) -> str:
         return f"WeaponPassiveSkill(Weapon: {self.weapon.name}, PassiveSkill: {self.passive_skill.name}, Tier: {self.tier}, Mastery Level Required: {self.mastery_level_required})"
-    
+
 
 class Legion(Model):
     """Represents a legion (Discord server/world) in the game."""
 
-    id            = fields.IntField(pk=True)
-    guild_id      = fields.BigIntField(unique=True, generated=False)
-    name          = fields.CharField(max_length=64)
+    id = fields.IntField(pk=True)
+    guild_id = fields.BigIntField(unique=True, generated=False)
+    name = fields.CharField(max_length=64)
 
     # Exp BANKS here from settlements; leveling is manual (Upgrade button:
     # banked exp >= cost AND stockpile covers the upgrade sheet).
-    level         = fields.IntField(default=1)
-    exp           = fields.IntField(default=0)
+    level = fields.IntField(default=1)
+    exp = fields.IntField(default=0)
 
-    daily_kills   = fields.IntField(default=0)
+    daily_kills = fields.IntField(default=0)
     last_reset_at = fields.DatetimeField(auto_now_add=True)
 
     # Designated bot channel, set by Manage Guild members (announcements,
     # dungeon feeds, upgrade reminders). Nothing posts until configured.
-    channel_id    = fields.BigIntField(null=True)
+    channel_id = fields.BigIntField(null=True)
 
-    created_at    = fields.DatetimeField(auto_now_add=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:  # type: ignore
         table = "legions"
 
     def __str__(self) -> str:
         return f"Legion({self.name}, Level: {self.level})"
-    
+
 
 class Mob(Model):
     """Represents a mob (enemy) in the game."""
@@ -239,7 +250,7 @@ class Mob(Model):
     id = fields.IntField(pk=True)
     # Stable content identity: patching & references key off this; `name`
     # is display-only and freely patchable/localizable.
-    key    = fields.CharField(max_length=64, unique=True, null=True)
+    key = fields.CharField(max_length=64, unique=True, null=True)
     status = fields.CharEnumField(ContentStatus, default=ContentStatus.ENABLED)
     name = fields.CharField(max_length=64)
     description = fields.TextField(null=True)
@@ -265,10 +276,10 @@ class Mob(Model):
 class MobSkill(Model):
     """Represents the relationship between a mob and an active skill."""
 
-    mob          = fields.ForeignKeyField("legion.Mob", related_name="skills")
-    skill        = fields.ForeignKeyField("legion.ActiveSkill", related_name="mob_entries")
+    mob = fields.ForeignKeyField("legion.Mob", related_name="skills")
+    skill = fields.ForeignKeyField("legion.ActiveSkill", related_name="mob_entries")
     hp_threshold = fields.FloatField(default=1.0)  # Usable when HP ratio <= threshold
-    cooldown     = fields.IntField(default=0)      # In the mob's own turns (0 = every turn)
+    cooldown = fields.IntField(default=0)  # In the mob's own turns (0 = every turn)
 
     class Meta:  # type: ignore
         table = "mob_skills"
@@ -281,9 +292,11 @@ class MobSkill(Model):
 class MobPassive(Model):
     """Represents the relationship between a mob and a passive skill."""
 
-    mob               = fields.ForeignKeyField("legion.Mob", related_name="passives")
-    skill             = fields.ForeignKeyField("legion.PassiveSkill", related_name="mob_entries")
-    requirement_type  = fields.CharEnumField(RequirementType, null=True)  # null = always active
+    mob = fields.ForeignKeyField("legion.Mob", related_name="passives")
+    skill = fields.ForeignKeyField("legion.PassiveSkill", related_name="mob_entries")
+    requirement_type = fields.CharEnumField(
+        RequirementType, null=True
+    )  # null = always active
     requirement_value = fields.FloatField(null=True)
 
     class Meta:  # type: ignore
@@ -300,12 +313,12 @@ class HuntingGround(Model):
 
     # Stable content identity: patching & references key off this; `name`
     # is display-only and freely patchable/localizable.
-    key    = fields.CharField(max_length=64, unique=True, null=True)
+    key = fields.CharField(max_length=64, unique=True, null=True)
     status = fields.CharEnumField(ContentStatus, default=ContentStatus.ENABLED)
-    name             = fields.CharField(max_length=64)
-    description      = fields.TextField(null=True)
+    name = fields.CharField(max_length=64)
+    description = fields.TextField(null=True)
 
-    danger           = fields.IntField(default=1)  # scales mob stats
+    danger = fields.IntField(default=1)  # scales mob stats
     min_legion_level = fields.IntField(default=1)
 
     class Meta:  # type: ignore
@@ -319,7 +332,7 @@ class GroundMob(Model):
     """A hunting ground encounter pool entry (weighted roll at spawn)."""
 
     ground = fields.ForeignKeyField("legion.HuntingGround", related_name="mobs")
-    mob    = fields.ForeignKeyField("legion.Mob", related_name="grounds")
+    mob = fields.ForeignKeyField("legion.Mob", related_name="grounds")
     weight = fields.IntField(default=1)
 
     class Meta:  # type: ignore
@@ -338,20 +351,20 @@ class DungeonInstance(Model):
     by the repository (Tortoise cannot express partial unique indexes).
     """
 
-    id         = fields.IntField(pk=True)
-    legion     = fields.ForeignKeyField("legion.Legion", related_name="dungeon_instances")
-    ground     = fields.ForeignKeyField("legion.HuntingGround", related_name="expeditions")
-    mob        = fields.ForeignKeyField("legion.Mob", related_name="dungeon_instances")
+    id = fields.IntField(pk=True)
+    legion = fields.ForeignKeyField("legion.Legion", related_name="dungeon_instances")
+    ground = fields.ForeignKeyField("legion.HuntingGround", related_name="expeditions")
+    mob = fields.ForeignKeyField("legion.Mob", related_name="dungeon_instances")
 
     # Player pressed Random instead of picking the ground: explorer's bonus
     # at settlement (+1 mastery to all, richer drop rolls) on a win.
     random_ground = fields.BooleanField(default=False)
 
-    status     = fields.CharEnumField(DungeonStatus, default=DungeonStatus.ACTIVE)
+    status = fields.CharEnumField(DungeonStatus, default=DungeonStatus.ACTIVE)
 
     created_at = fields.DatetimeField(auto_now_add=True)
     expires_at = fields.DatetimeField()  # lobby deadline: auto-fight fires here
-    ended_at   = fields.DatetimeField(null=True)  # set when status leaves ACTIVE
+    ended_at = fields.DatetimeField(null=True)  # set when status leaves ACTIVE
 
     class Meta:  # type: ignore
         table = "dungeon_instances"
@@ -364,13 +377,15 @@ class DungeonParticipant(Model):
     """A dungeon-run participation record - per-run stats are written
     once at settlement (run end), never per tick."""
 
-    instance     = fields.ForeignKeyField("legion.DungeonInstance", related_name="participants")
-    player       = fields.ForeignKeyField("legion.Player", related_name="dungeon_entries")
+    instance = fields.ForeignKeyField(
+        "legion.DungeonInstance", related_name="participants"
+    )
+    player = fields.ForeignKeyField("legion.Player", related_name="dungeon_entries")
 
-    joined_at    = fields.DatetimeField(auto_now_add=True)
+    joined_at = fields.DatetimeField(auto_now_add=True)
     damage_dealt = fields.IntField(default=0)
     damage_taken = fields.IntField(default=0)
-    died         = fields.BooleanField(default=False)
+    died = fields.BooleanField(default=False)
 
     class Meta:  # type: ignore
         table = "dungeon_participants"
@@ -385,15 +400,15 @@ class PlayerWeapon(Model):
     starter granted at onboarding. Equipping references these, never the
     catalog Weapon directly."""
 
-    player     = fields.ForeignKeyField("legion.Player", related_name="weapons")
-    weapon     = fields.ForeignKeyField("legion.Weapon", related_name="instances")
+    player = fields.ForeignKeyField("legion.Player", related_name="weapons")
+    weapon = fields.ForeignKeyField("legion.Weapon", related_name="instances")
     crafted_at = fields.DatetimeField(auto_now_add=True)
 
     # Craft mutation: {skill_id: effectiveness_pct} for every active/passive
     # on the weapon at craft time. Starters are flat (empty = all 100%).
     # `quality` is the cached tier derived from the mutation average.
-    mutations  = fields.JSONField(default=dict)
-    quality    = fields.CharEnumField(WeaponQuality, default=WeaponQuality.STANDARD)
+    mutations = fields.JSONField(default=dict)
+    quality = fields.CharEnumField(WeaponQuality, default=WeaponQuality.STANDARD)
 
     # null = in bag; unique per (player, slot) -- NULLs are distinct, so any
     # number of unequipped weapons coexist.
@@ -416,17 +431,17 @@ class Material(Model):
 
     # Stable content identity: patching & references key off this; `name`
     # is display-only and freely patchable/localizable.
-    key    = fields.CharField(max_length=64, unique=True, null=True)
+    key = fields.CharField(max_length=64, unique=True, null=True)
     status = fields.CharEnumField(ContentStatus, default=ContentStatus.ENABLED)
-    name        = fields.CharField(max_length=64)
+    name = fields.CharField(max_length=64)
     description = fields.TextField(null=True)
 
-    kind   = fields.CharEnumField(MaterialKind, default=MaterialKind.MATERIAL)
+    kind = fields.CharEnumField(MaterialKind, default=MaterialKind.MATERIAL)
     rarity = fields.IntField(default=1)
 
-    stat_bonus_type  = fields.CharEnumField(StatBonusType, null=True)
+    stat_bonus_type = fields.CharEnumField(StatBonusType, null=True)
     stat_bonus_value = fields.IntField(null=True)
-    duration         = fields.IntField(null=True)  # seconds; null = instant
+    duration = fields.IntField(null=True)  # seconds; null = instant
 
     class Meta:  # type: ignore
         table = "materials"
@@ -438,7 +453,7 @@ class Material(Model):
 class PlayerMaterial(Model):
     """A player material stack."""
 
-    player   = fields.ForeignKeyField("legion.Player", related_name="materials")
+    player = fields.ForeignKeyField("legion.Player", related_name="materials")
     material = fields.ForeignKeyField("legion.Material", related_name="holders")
     quantity = fields.IntField(default=0)
 
@@ -454,10 +469,10 @@ class MobDrop(Model):
     """A mob loot table entry. Rolled per player at settlement - outsiders
     (player.legion != instance.legion) receive no materials."""
 
-    mob      = fields.ForeignKeyField("legion.Mob", related_name="drops")
+    mob = fields.ForeignKeyField("legion.Mob", related_name="drops")
     material = fields.ForeignKeyField("legion.Material", related_name="dropped_by")
 
-    weight  = fields.IntField(default=1)
+    weight = fields.IntField(default=1)
     min_qty = fields.IntField(default=1)
     max_qty = fields.IntField(default=1)
 
@@ -476,20 +491,20 @@ class Recipe(Model):
 
     # Stable content identity: patching & references key off this; `name`
     # is display-only and freely patchable/localizable.
-    key    = fields.CharField(max_length=64, unique=True, null=True)
+    key = fields.CharField(max_length=64, unique=True, null=True)
     status = fields.CharEnumField(ContentStatus, default=ContentStatus.ENABLED)
     name = fields.CharField(max_length=64)
 
-    skill                  = fields.CharEnumField(LifeSkillType, null=True)  # null = weapon forge
+    skill = fields.CharEnumField(LifeSkillType, null=True)  # null = weapon forge
     mastery_level_required = fields.IntField(default=0)
 
-    result_weapon   = fields.ForeignKeyField(
+    result_weapon = fields.ForeignKeyField(
         "legion.Weapon", null=True, on_delete=fields.SET_NULL, related_name="recipes"
     )
     result_material = fields.ForeignKeyField(
         "legion.Material", null=True, on_delete=fields.SET_NULL, related_name="recipes"
     )
-    result_qty      = fields.IntField(default=1)
+    result_qty = fields.IntField(default=1)
 
     class Meta:  # type: ignore
         table = "recipes"
@@ -501,7 +516,7 @@ class Recipe(Model):
 class RecipeMaterial(Model):
     """A material input required by a recipe."""
 
-    recipe   = fields.ForeignKeyField("legion.Recipe", related_name="inputs")
+    recipe = fields.ForeignKeyField("legion.Recipe", related_name="inputs")
     material = fields.ForeignKeyField("legion.Material", related_name="used_in")
     quantity = fields.IntField(default=1)
 
@@ -517,9 +532,9 @@ class LifeSkillMastery(Model):
     """A weaponless life-skill mastery (cook/brew/mine)."""
 
     player = fields.ForeignKeyField("legion.Player", related_name="life_skills")
-    skill  = fields.CharEnumField(LifeSkillType)
-    level  = fields.IntField(default=0)
-    exp    = fields.IntField(default=0)
+    skill = fields.CharEnumField(LifeSkillType)
+    level = fields.IntField(default=0)
+    exp = fields.IntField(default=0)
 
     class Meta:  # type: ignore
         table = "life_skill_masteries"
@@ -534,12 +549,12 @@ class GatherSite(Model):
 
     # Stable content identity: patching & references key off this; `name`
     # is display-only and freely patchable/localizable.
-    key    = fields.CharField(max_length=64, unique=True, null=True)
+    key = fields.CharField(max_length=64, unique=True, null=True)
     status = fields.CharEnumField(ContentStatus, default=ContentStatus.ENABLED)
-    name             = fields.CharField(max_length=64)
-    description      = fields.TextField(null=True)
+    name = fields.CharField(max_length=64)
+    description = fields.TextField(null=True)
 
-    skill            = fields.CharEnumField(LifeSkillType)  # MINE or GARDEN
+    skill = fields.CharEnumField(LifeSkillType)  # MINE or GARDEN
     min_legion_level = fields.IntField(default=1)
 
     class Meta:  # type: ignore
@@ -552,10 +567,10 @@ class GatherSite(Model):
 class SiteYield(Model):
     """A gather site yield table entry, rolled per 30-min chunk at stop."""
 
-    site     = fields.ForeignKeyField("legion.GatherSite", related_name="yields")
+    site = fields.ForeignKeyField("legion.GatherSite", related_name="yields")
     material = fields.ForeignKeyField("legion.Material", related_name="gathered_from")
 
-    weight  = fields.IntField(default=1)
+    weight = fields.IntField(default=1)
     min_qty = fields.IntField(default=1)
     max_qty = fields.IntField(default=1)
 
@@ -573,12 +588,12 @@ class PlayerActivity(Model):
     from elapsed time then, capped by the gather-mastery bag. All other game
     actions are blocked while a session is running."""
 
-    player     = fields.ForeignKeyField("legion.Player", related_name="activities")
-    site       = fields.ForeignKeyField("legion.GatherSite", related_name="sessions")
-    skill      = fields.CharEnumField(LifeSkillType)  # denormalized from site
+    player = fields.ForeignKeyField("legion.Player", related_name="activities")
+    site = fields.ForeignKeyField("legion.GatherSite", related_name="sessions")
+    skill = fields.CharEnumField(LifeSkillType)  # denormalized from site
 
     started_at = fields.DatetimeField(auto_now_add=True)
-    collected  = fields.BooleanField(default=False)
+    collected = fields.BooleanField(default=False)
 
     class Meta:  # type: ignore
         table = "player_activities"
@@ -590,7 +605,7 @@ class PlayerActivity(Model):
 class LegionStockpile(Model):
     """A legion stack of a donated material (feeds upgrades)."""
 
-    legion   = fields.ForeignKeyField("legion.Legion", related_name="stockpile")
+    legion = fields.ForeignKeyField("legion.Legion", related_name="stockpile")
     material = fields.ForeignKeyField("legion.Material", related_name="stockpiled_by")
     quantity = fields.IntField(default=0)
 
@@ -610,17 +625,17 @@ class GamePatch(Model):
     rollout timeline; it survives restarts, so timers resume on boot.
     """
 
-    id           = fields.IntField(pk=True)
-    hash         = fields.CharField(max_length=16)
-    version      = fields.CharField(max_length=32)
-    notes        = fields.TextField(null=True)
-    summary      = fields.JSONField(default=dict)  # section counts
+    id = fields.IntField(pk=True)
+    hash = fields.CharField(max_length=16)
+    version = fields.CharField(max_length=32)
+    notes = fields.TextField(null=True)
+    summary = fields.JSONField(default=dict)  # section counts
 
-    status       = fields.CharEnumField(PatchStatus, default=PatchStatus.PENDING)
-    lock_at      = fields.DatetimeField(null=True)  # sessions block
-    apply_at     = fields.DatetimeField(null=True)  # patch lands
-    applied_at   = fields.DatetimeField(null=True)
-    created_at   = fields.DatetimeField(auto_now_add=True)
+    status = fields.CharEnumField(PatchStatus, default=PatchStatus.PENDING)
+    lock_at = fields.DatetimeField(null=True)  # sessions block
+    apply_at = fields.DatetimeField(null=True)  # patch lands
+    applied_at = fields.DatetimeField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:  # type: ignore
         table = "game_patches"
@@ -633,7 +648,7 @@ class LegionUpgradeCost(Model):
     """The upgrade requirement sheet: materials needed to reach ``level``.
     Actual quantity scales with member count (see constants)."""
 
-    level    = fields.IntField()
+    level = fields.IntField()
     material = fields.ForeignKeyField("legion.Material", related_name="upgrade_costs")
     base_qty = fields.IntField(default=1)
 
@@ -649,7 +664,7 @@ class SystemFlag(Model):
     """A persisted global on/off switch, keyed by name -- e.g. the maintenance
     freeze, which must survive the restart used to apply a patch."""
 
-    key     = fields.CharField(max_length=64, unique=True)
+    key = fields.CharField(max_length=64, unique=True)
     enabled = fields.BooleanField(default=False)
 
     class Meta:  # type: ignore

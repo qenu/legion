@@ -68,6 +68,7 @@ class _AuthorOnly(discord.ui.View):
 
 # --- onboarding ---------------------------------------------------------------
 
+
 class OnboardView(_AuthorOnly):
     """Ephemeral starter-weapon pick; creates the player on press."""
 
@@ -79,14 +80,10 @@ class OnboardView(_AuthorOnly):
             self.add_item(self._button(weapon))
 
     def _button(self, weapon: Weapon) -> discord.ui.Button:
-        button = discord.ui.Button(
-            label=weapon.name, style=discord.ButtonStyle.primary
-        )
+        button = discord.ui.Button(label=weapon.name, style=discord.ButtonStyle.primary)
 
         async def callback(interaction: discord.Interaction) -> None:
-            player = await self.cog.onboard(
-                interaction.user, self.legion, weapon
-            )
+            player = await self.cog.onboard(interaction.user, self.legion, weapon)
             await interaction.response.edit_message(
                 content=strings.ONBOARD_WELCOME.format(
                     legion=self.legion.name,
@@ -106,6 +103,7 @@ class OnboardView(_AuthorOnly):
 
 
 # --- expedition ------------------------------------------------------------------
+
 
 class GroundSelectView(_AuthorOnly):
     """Ephemeral two-layer picker. Layer 1 (selected=None): ground list embed,
@@ -241,7 +239,9 @@ class LobbyView(discord.ui.View):
             except discord.HTTPException:
                 pass
 
-    @discord.ui.button(label=JOIN_TITLE, style=discord.ButtonStyle.success, emoji=BATTLE_EMOJI)
+    @discord.ui.button(
+        label=JOIN_TITLE, style=discord.ButtonStyle.success, emoji=BATTLE_EMOJI
+    )
     async def join(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -249,6 +249,7 @@ class LobbyView(discord.ui.View):
 
 
 # --- settlement -------------------------------------------------------------------
+
 
 def _combat_log_button(log_embeds: list[discord.Embed]) -> discord.ui.Button:
     """戰鬥紀錄: replies to the presser with the fight as EPHEMERAL embeds (one
@@ -260,13 +261,9 @@ def _combat_log_button(log_embeds: list[discord.Embed]) -> discord.ui.Button:
 
     async def callback(interaction: discord.Interaction) -> None:
         if len(log_embeds) <= 1:
-            await interaction.response.send_message(
-                embed=log_embeds[0], ephemeral=True
-            )
+            await interaction.response.send_message(embed=log_embeds[0], ephemeral=True)
             return
-        pager = GenericEmbedPaginator(
-            log_embeds, author=interaction.user, timeout=600
-        )
+        pager = GenericEmbedPaginator(log_embeds, author=interaction.user, timeout=600)
         await interaction.response.send_message(
             embed=log_embeds[0], view=pager, ephemeral=True
         )
@@ -340,6 +337,7 @@ class SettlementPaginator(GenericEmbedPaginator):
 
 # --- legion ---------------------------------------------------------------------
 
+
 class LegionView(_AuthorOnly):
     def __init__(
         self,
@@ -369,9 +367,8 @@ class LegionView(_AuthorOnly):
         return await super().interaction_check(interaction)
 
     @discord.ui.button(
-            label=UPGRADE_TITLE, style=discord.ButtonStyle.primary, 
-            emoji=UP_EMOJI, row=0   
-            )
+        label=UPGRADE_TITLE, style=discord.ButtonStyle.primary, emoji=UP_EMOJI, row=0
+    )
     async def upgrade(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -389,16 +386,20 @@ class LegionView(_AuthorOnly):
     ) -> None:
         await self.cog.show_members(interaction, self.legion, page=0)
 
-    @discord.ui.button(label=DAILY_SUPPLY_TITLE, style=discord.ButtonStyle.success, row=1)
+    @discord.ui.button(
+        label=DAILY_SUPPLY_TITLE, style=discord.ButtonStyle.success, row=1
+    )
     async def daily_supply(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog.press_daily_supply(interaction, self.legion)
 
     @discord.ui.button(
-            label=LEGION_SETTINGS_TITLE, style=discord.ButtonStyle.secondary,
-            emoji=COG_EMOJI, row=1
-            )
+        label=LEGION_SETTINGS_TITLE,
+        style=discord.ButtonStyle.secondary,
+        emoji=COG_EMOJI,
+        row=1,
+    )
     async def settings(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -412,15 +413,11 @@ class LegionNameModal(discord.ui.Modal):
         super().__init__(title=PROFILE_CHANGE_NICK)
         self.cog = cog
         self.legion = legion
-        self.name = discord.ui.TextInput(
-            label=LEGION_RENAME_PROMPT, max_length=64
-        )
+        self.name = discord.ui.TextInput(label=LEGION_RENAME_PROMPT, max_length=64)
         self.add_item(self.name)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        await self.cog.set_legion_name(
-            interaction, self.legion, str(self.name.value)
-        )
+        await self.cog.set_legion_name(interaction, self.legion, str(self.name.value))
 
 
 class LegionSettingsView(_AuthorOnly):
@@ -442,9 +439,7 @@ class LegionSettingsView(_AuthorOnly):
         )
 
         async def callback(interaction: discord.Interaction) -> None:
-            await self.cog.set_channel(
-                interaction, self.legion, select.values[0].id
-            )
+            await self.cog.set_channel(interaction, self.legion, select.values[0].id)
 
         select.callback = callback
         return select
@@ -453,20 +448,18 @@ class LegionSettingsView(_AuthorOnly):
         select = discord.ui.UserSelect(placeholder=LEGION_SET_MANAGER, row=2)
 
         async def callback(interaction: discord.Interaction) -> None:
-            await self.cog.appoint_manager(
-                interaction, self.legion, select.values[0]
-            )
+            await self.cog.appoint_manager(interaction, self.legion, select.values[0])
 
         select.callback = callback
         return select
 
-    @discord.ui.button(label=PROFILE_CHANGE_NICK, style=discord.ButtonStyle.secondary, row=3)
+    @discord.ui.button(
+        label=PROFILE_CHANGE_NICK, style=discord.ButtonStyle.secondary, row=3
+    )
     async def rename(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        await interaction.response.send_modal(
-            LegionNameModal(self.cog, self.legion)
-        )
+        await interaction.response.send_modal(LegionNameModal(self.cog, self.legion))
 
     @discord.ui.button(label=RETURN_TITLE, style=discord.ButtonStyle.secondary, row=3)
     async def back(
@@ -504,9 +497,7 @@ class DonateQtyModal(discord.ui.Modal):
         except ValueError:
             qty = 0
         if qty < 1 or qty > self.max_qty:
-            await interaction.response.send_message(
-                DONATE_INVALID_QTY, ephemeral=True
-            )
+            await interaction.response.send_message(DONATE_INVALID_QTY, ephemeral=True)
             return
         await self.cog.do_donate(
             interaction, self.player, self.legion, self.material_id, qty
@@ -555,8 +546,11 @@ class DonateView(_AuthorOnly):
                 stack = self.stacks[material_id]
                 await interaction.response.send_modal(
                     DonateQtyModal(
-                        self.cog, self.player, self.legion,
-                        material_id, stack.quantity,
+                        self.cog,
+                        self.player,
+                        self.legion,
+                        material_id,
+                        stack.quantity,
                     )
                 )
 
@@ -588,25 +582,29 @@ class MembersView(_AuthorOnly):
         self.page = page
         self.prev.disabled = page <= 0
         self.next.disabled = page >= pages - 1
-        
+
         if isinstance(player, Player) and (player.legion_id == legion.id):
             self.add_item(self._leave_button())
         else:
             self.add_item(self._join_button())
-        
+
     @discord.ui.button(label=RETURN_TITLE, style=discord.ButtonStyle.secondary, row=1)
     async def back(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog.show_legion_home(interaction)
 
-    @discord.ui.button(label=ARROW_LEFT_EMOJI, style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(
+        label=ARROW_LEFT_EMOJI, style=discord.ButtonStyle.secondary, row=0
+    )
     async def prev(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog.show_members(interaction, self.legion, self.page - 1)
 
-    @discord.ui.button(label=ARROW_RIGHT_EMOJI, style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(
+        label=ARROW_RIGHT_EMOJI, style=discord.ButtonStyle.secondary, row=0
+    )
     async def next(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -622,7 +620,7 @@ class MembersView(_AuthorOnly):
 
         button.callback = callback
         return button
-    
+
     def _leave_button(self) -> discord.ui.Button:
         button = discord.ui.Button(
             label=LEAVE_TITLE + LEGION_REFER, style=discord.ButtonStyle.danger, row=1
@@ -636,6 +634,7 @@ class MembersView(_AuthorOnly):
 
 
 # --- profile ---------------------------------------------------------------------
+
 
 class NicknameModal(discord.ui.Modal, title=PROFILE_CHANGE_NICK):
     nickname = discord.ui.TextInput(label=PROFILE_CHANGE_NICK_PROMPT, max_length=32)
@@ -701,9 +700,7 @@ class LegionMasteryView(_AuthorOnly):
     """The mastery page: a select flips between the weapon-grip pool and the
     life-skill pool (one embed each -- both at once was too crowded)."""
 
-    def __init__(
-        self, cog: "LegionCog", author_id: int, player: Player, kind: str
-    ):
+    def __init__(self, cog: "LegionCog", author_id: int, player: Player, kind: str):
         super().__init__(author_id=author_id)
         self.cog = cog
         self.player = player
@@ -723,9 +720,7 @@ class LegionMasteryView(_AuthorOnly):
         )
 
         async def on_pick(interaction: discord.Interaction) -> None:
-            await self.cog.show_mastery(
-                interaction, self.player, kind=select.values[0]
-            )
+            await self.cog.show_mastery(interaction, self.player, kind=select.values[0])
 
         select.callback = on_pick
         self.add_item(select)
@@ -838,9 +833,7 @@ class InventoryCategoryView(_AuthorOnly):
                         interaction, self.player, int(self.selected[2:])
                     )
                     return
-                chosen = next(
-                    o for o in select.options if o.value == select.values[0]
-                )
+                chosen = next(o for o in select.options if o.value == select.values[0])
                 prefix = (
                     f"{chosen.emoji} "
                     if chosen.emoji and not str(chosen.emoji).startswith("<")
@@ -884,9 +877,7 @@ class WeaponDetailView(_AuthorOnly):
     """Layer 3: one weapon. Use equips into its hand, Dismantle destroys
     (unequipped only), Return goes back to the weapons list."""
 
-    def __init__(
-        self, cog: "LegionCog", author_id: int, player: Player, pw_id: int
-    ):
+    def __init__(self, cog: "LegionCog", author_id: int, player: Player, pw_id: int):
         super().__init__(author_id=author_id)
         self.cog = cog
         self.player = player
@@ -902,20 +893,17 @@ class WeaponDetailView(_AuthorOnly):
     async def dismantle(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        await self.cog.press_dismantle(
-            interaction, self.player, f"w:{self.pw_id}"
-        )
+        await self.cog.press_dismantle(interaction, self.player, f"w:{self.pw_id}")
 
     @discord.ui.button(label=RETURN_TITLE, style=discord.ButtonStyle.secondary)
     async def back(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        await self.cog.show_inventory_category(
-            interaction, self.player, KIND_WEAPONS
-        )
+        await self.cog.show_inventory_category(interaction, self.player, KIND_WEAPONS)
 
 
 # --- gathering ---------------------------------------------------------------------
+
 
 class GatherIdleView(_AuthorOnly):
     def __init__(
@@ -930,18 +918,18 @@ class GatherIdleView(_AuthorOnly):
         self.player = player
         options = [
             discord.SelectOption(
-                label=s.name, 
-                value=str(s.id), 
-                description=strings.GATHER_SKILL_TYPES.get(s.skill.value, s.skill.value)
+                label=s.name,
+                value=str(s.id),
+                description=strings.GATHER_SKILL_TYPES.get(
+                    s.skill.value, s.skill.value
+                ),
             )
             for s in sites[:25]
         ]
         select = discord.ui.Select(placeholder=PICK_DESTINATION_TITLE, options=options)
 
         async def callback(interaction: discord.Interaction) -> None:
-            await self.cog.start_gather(
-                interaction, self.player, int(select.values[0])
-            )
+            await self.cog.start_gather(interaction, self.player, int(select.values[0]))
 
         select.callback = callback
         self.add_item(select)
@@ -962,6 +950,7 @@ class GatherBusyView(_AuthorOnly):
 
 # --- patching ---------------------------------------------------------------------
 
+
 class PatchView(_AuthorOnly):
     """Stage 1: current patch + 'Check for update' (enables View update on a
     hash mismatch). If a patch is already scheduled, shows Cancel instead."""
@@ -981,7 +970,9 @@ class PatchView(_AuthorOnly):
         # The cog flips the button states on this view before responding.
         await self.cog.patch_check(interaction, self)
 
-    @discord.ui.button(label=PATCH_VIEW_UPDATE, style=discord.ButtonStyle.success, emoji="📋")
+    @discord.ui.button(
+        label=PATCH_VIEW_UPDATE, style=discord.ButtonStyle.success, emoji="📋"
+    )
     async def view_update(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -1006,7 +997,9 @@ class PatchDecisionView(_AuthorOnly):
         super().__init__(author_id=author_id)
         self.cog = cog
 
-    @discord.ui.button(label=PATCH_UPDATE, style=discord.ButtonStyle.success, emoji="🗓️")
+    @discord.ui.button(
+        label=PATCH_UPDATE, style=discord.ButtonStyle.success, emoji="🗓️"
+    )
     async def update(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -1040,7 +1033,9 @@ class ForceConfirmView(_AuthorOnly):
         super().__init__(author_id=author_id, timeout=60)
         self.cog = cog
 
-    @discord.ui.button(label=f"{CONFIRM_TITLE}{PATCH_FORCE_UPDATE}", style=discord.ButtonStyle.danger)
+    @discord.ui.button(
+        label=f"{CONFIRM_TITLE}{PATCH_FORCE_UPDATE}", style=discord.ButtonStyle.danger
+    )
     async def confirm(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -1057,6 +1052,7 @@ class ForceConfirmView(_AuthorOnly):
 
 # --- crafting ---------------------------------------------------------------------
 
+
 class CraftHomeView(_AuthorOnly):
     """Top level: one button per workstation; the embed shows masteries and
     what each station can make."""
@@ -1066,19 +1062,25 @@ class CraftHomeView(_AuthorOnly):
         self.cog = cog
         self.player = player
 
-    @discord.ui.button(label=FORGE_TITLE, style=discord.ButtonStyle.primary, emoji=FORGE_EMOJI)
+    @discord.ui.button(
+        label=FORGE_TITLE, style=discord.ButtonStyle.primary, emoji=FORGE_EMOJI
+    )
     async def forge(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog.show_craft_surface(interaction, self.player, "forge")
 
-    @discord.ui.button(label=COOK_TITLE, style=discord.ButtonStyle.primary, emoji=COOK_EMOJI)
+    @discord.ui.button(
+        label=COOK_TITLE, style=discord.ButtonStyle.primary, emoji=COOK_EMOJI
+    )
     async def cook(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog.show_craft_surface(interaction, self.player, "cook")
 
-    @discord.ui.button(label=BREW_TITLE, style=discord.ButtonStyle.primary, emoji=BREW_EMOJI)
+    @discord.ui.button(
+        label=BREW_TITLE, style=discord.ButtonStyle.primary, emoji=BREW_EMOJI
+    )
     async def brew(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -1109,11 +1111,14 @@ class CraftSurfaceView(_AuthorOnly):
         self.page = 0
         if len(self.embeds) > 1:
             prev_b = discord.ui.Button(
-                label=ARROW_LEFT_EMOJI, style=discord.ButtonStyle.secondary,
-                row=1, disabled=True,
+                label=ARROW_LEFT_EMOJI,
+                style=discord.ButtonStyle.secondary,
+                row=1,
+                disabled=True,
             )
             next_b = discord.ui.Button(
-                label=ARROW_RIGHT_EMOJI, style=discord.ButtonStyle.secondary,
+                label=ARROW_RIGHT_EMOJI,
+                style=discord.ButtonStyle.secondary,
                 row=1,
             )
 
@@ -1149,6 +1154,7 @@ class CraftSurfaceView(_AuthorOnly):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog.show_craft_home(interaction, self.player, edit=True)
+
 
 class RecipeDetailView(_AuthorOnly):
     """Craft layer 3: one recipe in full. Craft (disabled when unaffordable)
@@ -1187,7 +1193,9 @@ class CraftConfirmView(_AuthorOnly):
     """The ephemeral are-you-sure. Yes runs the craft (with the dot-count
     quality tell animation); Cancel closes."""
 
-    def __init__(self, cog: "LegionCog", author_id: int, player: Player, recipe_id: int):
+    def __init__(
+        self, cog: "LegionCog", author_id: int, player: Player, recipe_id: int
+    ):
         super().__init__(author_id=author_id, timeout=60)
         self.cog = cog
         self.player = player
@@ -1233,14 +1241,17 @@ class DismantleConfirmView(_AuthorOnly):
         )
 
 
-
 class CaptchaView(_AuthorOnly):
     """Anti-script button test: click the number named in the prompt. A correct
     click continues to the ground list; a wrong one soft-locks the player."""
 
     def __init__(
-        self, cog: "LegionCog", author_id: int, player: Player,
-        answer: int, choices: list[int],
+        self,
+        cog: "LegionCog",
+        author_id: int,
+        player: Player,
+        answer: int,
+        choices: list[int],
     ):
         super().__init__(author_id=author_id, timeout=CAPTCHA_TIMEOUT_SECONDS)
         self.cog = cog

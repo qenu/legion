@@ -69,13 +69,13 @@ def _category_bonuses() -> dict[str, list[tuple[int, str, int]]]:
         rows = c.get("bonus_stat")
         if rows:
             out[c["key"]] = [
-                (int(b["level"]), b["stat_bonus_type"], int(b["value"]))
-                for b in rows
+                (int(b["level"]), b["stat_bonus_type"], int(b["value"])) for b in rows
             ]
     return out
 
 
 # --- runtime state ----------------------------------------------------------
+
 
 @dataclass
 class LoadedSkill:
@@ -84,9 +84,9 @@ class LoadedSkill:
     and craft mutation together."""
 
     skill: ActiveSkill
-    cooldown: int              # the actor's own turns (0 = usable every turn)
-    formula: str = "0"         # e.g. "{atk} + 12" -- see calculator.eval_formula
-    scale: float = 1.0         # tier% * mutation% / 10000
+    cooldown: int  # the actor's own turns (0 = usable every turn)
+    formula: str = "0"  # e.g. "{atk} + 12" -- see calculator.eval_formula
+    scale: float = 1.0  # tier% * mutation% / 10000
     hp_threshold: float = 1.0  # mob-only gate: usable when hp ratio <= this
 
 
@@ -96,7 +96,7 @@ class DoT:
     rounds_left: int
     source: "Combatant"  # gets damage_dealt credit for each round's tick
     label: str = "bleed"  # DoT flavor -> event kinds: "{label}_tick" / "{label}_effect"
-    pct_max_hp: float = 0.0     # poison: bonus = pct * victim.max_hp per round
+    pct_max_hp: float = 0.0  # poison: bonus = pct * victim.max_hp per round
     double_chance: float = 0.0  # burn: chance the round's damage is doubled
 
 
@@ -111,7 +111,9 @@ class Combatant:
 
     taunt: int = 0  # aggro pull; only read for mob target weighting (players)
     skills: list[LoadedSkill] = field(default_factory=list)
-    cooldowns: dict[int, int] = field(default_factory=dict)  # skill id -> ready at own-turn N
+    cooldowns: dict[int, int] = field(
+        default_factory=dict
+    )  # skill id -> ready at own-turn N
     turns_taken: int = 0
 
     gauge: int = 0
@@ -164,20 +166,20 @@ class BattleContext:
 @dataclass
 class CombatEvent:
     tick: int
-    round: int           # 1-based; round r ends with the mob's rth action
+    round: int  # 1-based; round r ends with the mob's rth action
     actor: str
-    kind: str            # "skill" | "attack" | "heal" | "stun" | "stunned" | "bleed" | "death" | "passive" | "bleed_tick"
+    kind: str  # "skill" | "attack" | "heal" | "stun" | "stunned" | "bleed" | "death" | "passive" | "bleed_tick"
     target: str | None = None
     value: int = 0
-    detail: str = ""     # skill/passive name
+    detail: str = ""  # skill/passive name
 
 
 @dataclass
 class SimulationResult:
     won: bool
     ticks: int
-    rounds: int          # mob turns taken (replay chapters)
-    rounded_out: bool    # mob survived its rounds_limit -> FAILED
+    rounds: int  # mob turns taken (replay chapters)
+    rounded_out: bool  # mob survived its rounds_limit -> FAILED
     party: list[PlayerState]
     mob: MobState
     events: list[CombatEvent]
@@ -197,6 +199,7 @@ class SimulationResult:
 
 
 # --- builders (the only DB access) ------------------------------------------
+
 
 async def build_player_state(player: Player, legion_level: int = 0) -> PlayerState:
     """Snapshot a player into combat state: base stats + legion defensive
@@ -218,8 +221,13 @@ async def build_player_state(player: Player, legion_level: int = 0) -> PlayerSta
     # Passive formulas evaluate against BASE stats (before any passive
     # applies) -- no ordering dependence, no self-compounding.
     base_stats = {
-        "atk": atk, "attack": atk, "def": def_, "defense": def_,
-        "speed": speed, "hp": player.health_points, "max_hp": max_hp,
+        "atk": atk,
+        "attack": atk,
+        "def": def_,
+        "defense": def_,
+        "speed": speed,
+        "hp": player.health_points,
+        "max_hp": max_hp,
         "taunt": taunt,
     }
     skills: list[LoadedSkill] = []
@@ -349,9 +357,7 @@ async def effective_max_hp_and_regen(
     return state.max_hp, state.regen_bonus
 
 
-async def build_mob_state(
-    mob: Mob, danger: int, player_count: int
-) -> MobState:
+async def build_mob_state(mob: Mob, danger: int, player_count: int) -> MobState:
     """Snapshot a mob: stats scaled by the hunting ground's danger + party
     size, loadout, and passives split into always-active (applied now) and
     pending (checked per tick)."""
@@ -417,9 +423,13 @@ def _apply_mob_passive(state: MobState, passive: MobPassive) -> None:
 def _stats_of(c: Combatant) -> dict:
     """Formula variables exposed to skill/passive expressions."""
     return {
-        "atk": c.atk, "attack": c.atk,
-        "def": c.def_, "defense": c.def_,
-        "speed": c.speed, "hp": c.current_hp, "max_hp": c.max_hp,
+        "atk": c.atk,
+        "attack": c.atk,
+        "def": c.def_,
+        "defense": c.def_,
+        "speed": c.speed,
+        "hp": c.current_hp,
+        "max_hp": c.max_hp,
         "taunt": c.taunt,
     }
 
@@ -432,6 +442,7 @@ def _skill_value(loaded: LoadedSkill, actor: Combatant) -> int:
 
 # --- the fight ---------------------------------------------------------------
 
+
 def _check_requirements(
     mob: MobState, ctx: BattleContext, events: list[CombatEvent]
 ) -> None:
@@ -439,14 +450,18 @@ def _check_requirements(
         if req.activated:
             continue
         met = (
-            req.requirement_type == RequirementType.HP_BELOW
-            and mob.hp_ratio <= req.requirement_value
-        ) or (
-            req.requirement_type == RequirementType.PLAYER_DEAD
-            and ctx.dead_player_count >= req.requirement_value
-        ) or (
-            req.requirement_type == RequirementType.ROUND
-            and ctx.round >= req.requirement_value
+            (
+                req.requirement_type == RequirementType.HP_BELOW
+                and mob.hp_ratio <= req.requirement_value
+            )
+            or (
+                req.requirement_type == RequirementType.PLAYER_DEAD
+                and ctx.dead_player_count >= req.requirement_value
+            )
+            or (
+                req.requirement_type == RequirementType.ROUND
+                and ctx.round >= req.requirement_value
+            )
         )
         if met:
             req.activated = True
@@ -454,15 +469,23 @@ def _check_requirements(
             _apply_mob_passive(mob, req.passive)
             events.append(
                 CombatEvent(
-                    tick=ctx.tick, round=ctx.round + 1, actor=mob.name, kind="passive",
+                    tick=ctx.tick,
+                    round=ctx.round + 1,
+                    actor=mob.name,
+                    kind="passive",
                     detail=req.passive.skill.name,
                 )
             )
 
 
 def _deal_damage(
-    attacker: Combatant, target: Combatant, raw: int,
-    ctx: BattleContext, events: list[CombatEvent], kind: str, detail: str = "",
+    attacker: Combatant,
+    target: Combatant,
+    raw: int,
+    ctx: BattleContext,
+    events: list[CombatEvent],
+    kind: str,
+    detail: str = "",
 ) -> None:
     dmg = max(1, raw - target.def_)
     target.current_hp = max(0, target.current_hp - dmg)
@@ -470,19 +493,32 @@ def _deal_damage(
     target.damage_taken += dmg
     events.append(
         CombatEvent(
-            tick=ctx.tick, round=ctx.round + 1, actor=attacker.name, kind=kind,
-            target=target.name, value=dmg, detail=detail,
+            tick=ctx.tick,
+            round=ctx.round + 1,
+            actor=attacker.name,
+            kind=kind,
+            target=target.name,
+            value=dmg,
+            detail=detail,
         )
     )
     if not target.alive:
-        events.append(CombatEvent(tick=ctx.tick, round=ctx.round + 1, actor=target.name, kind="death"))
+        events.append(
+            CombatEvent(
+                tick=ctx.tick, round=ctx.round + 1, actor=target.name, kind="death"
+            )
+        )
         if isinstance(target, PlayerState):
             ctx.dead_player_count += 1
 
 
 def _use_skill(
-    actor: Combatant, loaded: LoadedSkill, enemy: Combatant,
-    allies: list[Combatant], ctx: BattleContext, events: list[CombatEvent],
+    actor: Combatant,
+    loaded: LoadedSkill,
+    enemy: Combatant,
+    allies: list[Combatant],
+    ctx: BattleContext,
+    events: list[CombatEvent],
 ) -> None:
     skill = loaded.skill
     # Cooldowns count the actor's own turns: ready again once the actor has
@@ -494,8 +530,13 @@ def _use_skill(
     value = _skill_value(loaded, actor)
     if skill.effect_type == EffectType.DAMAGE:
         _deal_damage(
-            actor, enemy, value, ctx, events,
-            kind="skill", detail=skill.name,
+            actor,
+            enemy,
+            value,
+            ctx,
+            events,
+            kind="skill",
+            detail=skill.name,
         )
     elif skill.effect_type == EffectType.HEAL:
         target = min((a for a in allies if a.alive), key=lambda a: a.hp_ratio)
@@ -507,8 +548,13 @@ def _use_skill(
         target_name = MYSELF_TITLE if actor is target else target.name
         events.append(
             CombatEvent(
-                tick=ctx.tick, round=ctx.round + 1, actor=actor.name, kind="heal",
-                target=target_name, value=healed, detail=skill.name,
+                tick=ctx.tick,
+                round=ctx.round + 1,
+                actor=actor.name,
+                kind="heal",
+                target=target_name,
+                value=healed,
+                detail=skill.name,
             )
         )
     elif skill.effect_type == EffectType.STUN:
@@ -520,40 +566,70 @@ def _use_skill(
         enemy.stun_rounds = max(enemy.stun_rounds, rounds)
         events.append(
             CombatEvent(
-                tick=ctx.tick, round=ctx.round + 1, actor=actor.name, kind="stun",
-                target=enemy.name, value=value, detail=skill.name,
+                tick=ctx.tick,
+                round=ctx.round + 1,
+                actor=actor.name,
+                kind="stun",
+                target=enemy.name,
+                value=value,
+                detail=skill.name,
             )
         )
     elif skill.effect_type == EffectType.BLEED:
         enemy.dots.append(DoT(value, BLEED_DURATION, actor))
         events.append(
             CombatEvent(
-                tick=ctx.tick, round=ctx.round + 1, actor=actor.name, kind="bleed",
-                target=enemy.name, value=value, detail=skill.name,
+                tick=ctx.tick,
+                round=ctx.round + 1,
+                actor=actor.name,
+                kind="bleed",
+                target=enemy.name,
+                value=value,
+                detail=skill.name,
             )
         )
     elif skill.effect_type == EffectType.POISON:
         # Poison: base DoT + an extra 1% of the victim's max HP each round.
         enemy.dots.append(
-            DoT(value, POISON_DURATION, actor, label="poison",
-                  pct_max_hp=POISON_PCT_MAX_HP)
+            DoT(
+                value,
+                POISON_DURATION,
+                actor,
+                label="poison",
+                pct_max_hp=POISON_PCT_MAX_HP,
+            )
         )
         events.append(
             CombatEvent(
-                tick=ctx.tick, round=ctx.round + 1, actor=actor.name, kind="poison",
-                target=enemy.name, value=value, detail=skill.name,
+                tick=ctx.tick,
+                round=ctx.round + 1,
+                actor=actor.name,
+                kind="poison",
+                target=enemy.name,
+                value=value,
+                detail=skill.name,
             )
         )
     elif skill.effect_type == EffectType.BURN:
         # Burn: base DoT that has a 30% chance each round to deal double.
         enemy.dots.append(
-            DoT(value, BURN_DURATION, actor, label="burn",
-                  double_chance=BURN_DOUBLE_CHANCE)
+            DoT(
+                value,
+                BURN_DURATION,
+                actor,
+                label="burn",
+                double_chance=BURN_DOUBLE_CHANCE,
+            )
         )
         events.append(
             CombatEvent(
-                tick=ctx.tick, round=ctx.round + 1, actor=actor.name, kind="burn",
-                target=enemy.name, value=value, detail=skill.name,
+                tick=ctx.tick,
+                round=ctx.round + 1,
+                actor=actor.name,
+                kind="burn",
+                target=enemy.name,
+                value=value,
+                detail=skill.name,
             )
         )
     elif skill.effect_type == EffectType.FREEZE:
@@ -564,15 +640,23 @@ def _use_skill(
         enemy.freeze_rounds = max(enemy.freeze_rounds, FREEZE_DURATION)
         events.append(
             CombatEvent(
-                tick=ctx.tick, round=ctx.round + 1, actor=actor.name, kind="freeze",
-                target=enemy.name, value=value, detail=skill.name,
+                tick=ctx.tick,
+                round=ctx.round + 1,
+                actor=actor.name,
+                kind="freeze",
+                target=enemy.name,
+                value=value,
+                detail=skill.name,
             )
         )
 
 
 def _player_act(
-    ps: PlayerState, mob: MobState, party: list[PlayerState],
-    ctx: BattleContext, events: list[CombatEvent],
+    ps: PlayerState,
+    mob: MobState,
+    party: list[PlayerState],
+    ctx: BattleContext,
+    events: list[CombatEvent],
 ) -> None:
     """EVERY off-cooldown skill fires this turn (cooldowns are the only
     pacing; tier no longer orders a priority rotation -- it scales values).
@@ -589,9 +673,7 @@ def _player_act(
     ps.turns_taken += 1
 
 
-def _pick_target(
-    targets: list[PlayerState], rng: random.Random
-) -> PlayerState:
+def _pick_target(targets: list[PlayerState], rng: random.Random) -> PlayerState:
     """Aggro-weighted target roll: pull = HP_AGGRO_WEIGHT * max_hp +
     TAUNT_AGGRO_WEIGHT * taunt. Higher-HP and higher-taunt players are hit more
     often; re-rolled every mob turn (no sticky focus-fire)."""
@@ -606,14 +688,18 @@ def _pick_target(
 
 
 def _mob_act(
-    mob: MobState, party: list[PlayerState],
-    ctx: BattleContext, events: list[CombatEvent], rng: random.Random,
+    mob: MobState,
+    party: list[PlayerState],
+    ctx: BattleContext,
+    events: list[CombatEvent],
+    rng: random.Random,
 ) -> None:
     targets = [p for p in party if p.alive]
     if not targets:
         return
     usable = [
-        ls for ls in mob.skills
+        ls
+        for ls in mob.skills
         if mob.hp_ratio <= ls.hp_threshold
         and mob.cooldowns.get(ls.skill.id, 0) <= mob.turns_taken
     ]
@@ -635,8 +721,12 @@ def _mob_act(
 
 
 def _dot_hurt(
-    combatant: Combatant, source: Combatant, dmg: int, kind: str,
-    ctx: BattleContext, events: list[CombatEvent],
+    combatant: Combatant,
+    source: Combatant,
+    dmg: int,
+    kind: str,
+    ctx: BattleContext,
+    events: list[CombatEvent],
 ) -> None:
     """Apply one chunk of DoT damage, credit the source, and log it."""
     if dmg <= 0:
@@ -646,14 +736,19 @@ def _dot_hurt(
     source.damage_dealt += dmg
     events.append(
         CombatEvent(
-            tick=ctx.tick, round=ctx.round + 1, actor=combatant.name,
-            kind=kind, value=dmg,
+            tick=ctx.tick,
+            round=ctx.round + 1,
+            actor=combatant.name,
+            kind=kind,
+            value=dmg,
         )
     )
 
 
 def _apply_dots(
-    combatant: Combatant, ctx: BattleContext, events: list[CombatEvent],
+    combatant: Combatant,
+    ctx: BattleContext,
+    events: list[CombatEvent],
     rng: random.Random,
 ) -> None:
     for dot in combatant.dots:
@@ -661,23 +756,36 @@ def _apply_dots(
             break
         # Base tick (from effect_value), then the status's special bonus.
         _dot_hurt(
-            combatant, dot.source, dot.dmg_per_round,
-            f"{dot.label}_tick", ctx, events,
+            combatant,
+            dot.source,
+            dot.dmg_per_round,
+            f"{dot.label}_tick",
+            ctx,
+            events,
         )
         if combatant.alive:
             bonus = 0
-            if dot.pct_max_hp:                       # poison: +% max HP
+            if dot.pct_max_hp:  # poison: +% max HP
                 bonus = max(1, int(combatant.max_hp * dot.pct_max_hp))
             elif dot.double_chance and rng.random() < dot.double_chance:
-                bonus = dot.dmg_per_round            # burn: doubled -> +base
+                bonus = dot.dmg_per_round  # burn: doubled -> +base
             _dot_hurt(
-                combatant, dot.source, bonus,
-                f"{dot.label}_effect", ctx, events,
+                combatant,
+                dot.source,
+                bonus,
+                f"{dot.label}_effect",
+                ctx,
+                events,
             )
         dot.rounds_left -= 1
         if not combatant.alive:
             events.append(
-                CombatEvent(tick=ctx.tick, round=ctx.round + 1, actor=combatant.name, kind="death")
+                CombatEvent(
+                    tick=ctx.tick,
+                    round=ctx.round + 1,
+                    actor=combatant.name,
+                    kind="death",
+                )
             )
             if isinstance(combatant, PlayerState):
                 ctx.dead_player_count += 1
@@ -705,11 +813,7 @@ def run_simulation(
         return mob.alive and ctx.round >= mob.rounds_limit
 
     def over() -> bool:
-        return (
-            not mob.alive
-            or not any(p.alive for p in party)
-            or rounded_out()
-        )
+        return not mob.alive or not any(p.alive for p in party) or rounded_out()
 
     while ctx.tick < SIM_MAX_TICKS and not over():
         ctx.tick += 1
@@ -742,8 +846,10 @@ def run_simulation(
                     actor.stun_rounds -= 1
                     events.append(
                         CombatEvent(
-                            tick=ctx.tick, round=ctx.round + 1,
-                            actor=actor.name, kind="stunned",
+                            tick=ctx.tick,
+                            round=ctx.round + 1,
+                            actor=actor.name,
+                            kind="stunned",
                         )
                     )
                     continue
@@ -754,8 +860,10 @@ def run_simulation(
                     if rng.random() < FREEZE_SKIP_CHANCE:
                         events.append(
                             CombatEvent(
-                                tick=ctx.tick, round=ctx.round + 1,
-                                actor=actor.name, kind="freeze_effect",
+                                tick=ctx.tick,
+                                round=ctx.round + 1,
+                                actor=actor.name,
+                                kind="freeze_effect",
                             )
                         )
                         continue
@@ -774,8 +882,10 @@ def run_simulation(
                     if rng.random() < FREEZE_SKIP_CHANCE:
                         events.append(
                             CombatEvent(
-                                tick=ctx.tick, round=ctx.round + 1,
-                                actor=actor.name, kind="freeze_effect",
+                                tick=ctx.tick,
+                                round=ctx.round + 1,
+                                actor=actor.name,
+                                kind="freeze_effect",
                             )
                         )
                         continue

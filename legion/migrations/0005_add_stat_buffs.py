@@ -6,12 +6,12 @@ from orjson import loads
 
 
 class Migration(migrations.Migration):
-    dependencies = [('legion', '0004_add_system_flags')]
+    dependencies = [("legion", "0004_add_system_flags")]
 
     operations = [
         ops.AddField(
-            'Player',
-            'stat_buffs',
+            "Player",
+            "stat_buffs",
             fields.JSONField(
                 null=True, default=dict, encoder=JSON_DUMPS, decoder=loads
             ),

@@ -32,6 +32,7 @@ def clean_legion_name(raw: str) -> str:
 
 # --- patch timeline ----------------------------------------------------------
 
+
 def next_hour(now: datetime) -> datetime:
     """Start of the next full hour."""
     return (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)

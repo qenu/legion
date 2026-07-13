@@ -50,7 +50,7 @@ class ParticipantResult:
     damage_taken: int = 0
     died: bool = False
     final_hp: int | None = None  # persistent HP write-back; None = leave unchanged
-    max_hp: int | None = None    # snapshot effective max: the slice-back anchor
+    max_hp: int | None = None  # snapshot effective max: the slice-back anchor
 
 
 @dataclass
@@ -62,10 +62,10 @@ class PlayerSettlement:
     mastery_pts: int
     top_damage: bool = False
     top_tank: bool = False
-    grant: MasteryGrant | None = None      # None = no main weapon equipped
+    grant: MasteryGrant | None = None  # None = no main weapon equipped
     grant_sub: MasteryGrant | None = None  # None = no sub weapon equipped
     drops: list[tuple[Material, int]] = field(default_factory=list)
-    daily_contri: int = 0                  # first fight of the day bonus
+    daily_contri: int = 0  # first fight of the day bonus
 
 
 @dataclass
@@ -208,14 +208,13 @@ class SettlementService:
             # Daily contribution: first fight of the UTC day, own legion only.
             if not outsider:
                 now = datetime.now(timezone.utc)
-                if player.last_daily_at is None or player.last_daily_at.astimezone(
-                    timezone.utc
-                ).date() < now.date():
+                if (
+                    player.last_daily_at is None
+                    or player.last_daily_at.astimezone(timezone.utc).date() < now.date()
+                ):
                     player.contribution += CONTRI_DAILY_FIRST_RUN
                     player.last_daily_at = now
-                    await player.save(
-                        update_fields=["contribution", "last_daily_at"]
-                    )
+                    await player.save(update_fields=["contribution", "last_daily_at"])
                     line.daily_contri = CONTRI_DAILY_FIRST_RUN
 
             report.players.append(line)
@@ -239,9 +238,7 @@ class SettlementService:
             report.legion_exp = mob.tier * LEGION_EXP_PER_MOB_TIER
             # Exp banks only -- leveling is the manual Upgrade act. The flag
             # tells the cog to post the "ready to upgrade" reminder.
-            report.upgrade_ready = await self.legions.add_exp(
-                legion, report.legion_exp
-            )
+            report.upgrade_ready = await self.legions.add_exp(legion, report.legion_exp)
             await self.legions.add_kills(legion)
 
         return report

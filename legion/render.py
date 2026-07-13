@@ -44,16 +44,18 @@ from maki.cogs.legion.model.model import (
 from maki.cogs.legion.settlement import SettlementReport
 from maki.cogs.legion.simulation import CombatEvent, SimulationResult
 
-
 # Display stats for skill-value previews: effect_value / stat_bonus_value are
 # FORMULA STRINGS now ("{atk} + 12"); detail embeds resolve them against base
 # player stats (combat resolves against live stats at use time, so shown
 # numbers are a baseline, not a promise).
 _BASE_STATS = {
-    "atk": PLAYER_BASE_ATK, "attack": PLAYER_BASE_ATK,
-    "def": PLAYER_BASE_DEF, "defense": PLAYER_BASE_DEF,
+    "atk": PLAYER_BASE_ATK,
+    "attack": PLAYER_BASE_ATK,
+    "def": PLAYER_BASE_DEF,
+    "defense": PLAYER_BASE_DEF,
     "speed": PLAYER_BASE_SPEED,
-    "hp": 100, "max_hp": 100,  # Player.max_health_points base default
+    "hp": 100,
+    "max_hp": 100,  # Player.max_health_points base default
 }
 
 
@@ -67,6 +69,7 @@ def _formula_value(expr, tier: int, mutation: int | None = None) -> int:
 
 
 # --- expedition --------------------------------------------------------------
+
 
 def ground_list_embed(
     grounds: list[HuntingGround], color: discord.Colour
@@ -100,9 +103,7 @@ def ground_detail_embed(
     desc = [f"{strings.DANGER_TITLE}{strings.EXPONENT_TITLE}：**{ground.danger}**"]
     if ground.description:
         desc.insert(0, ground.description)
-    embed = discord.Embed(
-        title=ground.name, description="\n".join(desc), color=color
-    )
+    embed = discord.Embed(title=ground.name, description="\n".join(desc), color=color)
     total = sum(e.weight for e in pool) or 1
     mob_lines = [
         strings.HUNTING_GROUND_MOB_LINE.format(
@@ -132,15 +133,22 @@ def lobby_embed(
     color: discord.Colour,
     started: bool = False,
 ) -> discord.Embed:
-    where = ground.name if not random_ground else f"{ground.name} ({strings.RANDOM_PREFIX})"
-    desc = strings.HUNTING_EXPEDITION_DESC_LIST[hash(where) % len(strings.HUNTING_EXPEDITION_DESC_LIST)].format(
-        ground=ground.name, mob=mob.name, tier=mob.tier
+    where = (
+        ground.name if not random_ground else f"{ground.name} ({strings.RANDOM_PREFIX})"
     )
-    rounds_limit = strings.HUNTING_EXPEDITION_ROUNDSLIMIT.format(rounds=mob.rounds_limit)
+    desc = strings.HUNTING_EXPEDITION_DESC_LIST[
+        hash(where) % len(strings.HUNTING_EXPEDITION_DESC_LIST)
+    ].format(ground=ground.name, mob=mob.name, tier=mob.tier)
+    rounds_limit = strings.HUNTING_EXPEDITION_ROUNDSLIMIT.format(
+        rounds=mob.rounds_limit
+    )
     # At expiry the countdown line flips to the preparation-over notice.
     time_left = (
-        strings.HUNTING_PREPARATION_OVER if started
-        else strings.HUNTING_EXPEDITION_TIMELEFT.format(expires=int(expires_at.timestamp()))
+        strings.HUNTING_PREPARATION_OVER
+        if started
+        else strings.HUNTING_EXPEDITION_TIMELEFT.format(
+            expires=int(expires_at.timestamp())
+        )
     )
     embed = discord.Embed(
         title=f"{where}",
@@ -149,11 +157,23 @@ def lobby_embed(
     )
     embed.set_author(name=strings.HUNTING_EXPEDITION_IN_PROGRESS)
     if len(participants) > LOBBY_PLAYERS_SHOWN:
-        names = "\n".join(f"- {n}" for n in participants[:LOBBY_PLAYERS_SHOWN]) + "\n..."
+        names = (
+            "\n".join(f"- {n}" for n in participants[:LOBBY_PLAYERS_SHOWN]) + "\n..."
+        )
     else:
-        names = "\n".join(f"- {n}" for n in participants[:LOBBY_PLAYERS_SHOWN]) or strings.HUNTING_PARTY_EMPTY
-    embed.add_field(name=f"{strings.HUNTING_PARTY} ({len(participants)}{strings.PLAYER_UNIT})", value=names)
-    embed.set_footer(text=strings.HUNTING_FOOTER_TOOLTIP.format(command=strings.EXPEDITION_COMMAND_NAME))
+        names = (
+            "\n".join(f"- {n}" for n in participants[:LOBBY_PLAYERS_SHOWN])
+            or strings.HUNTING_PARTY_EMPTY
+        )
+    embed.add_field(
+        name=f"{strings.HUNTING_PARTY} ({len(participants)}{strings.PLAYER_UNIT})",
+        value=names,
+    )
+    embed.set_footer(
+        text=strings.HUNTING_FOOTER_TOOLTIP.format(
+            command=strings.EXPEDITION_COMMAND_NAME
+        )
+    )
     return embed
 
 
@@ -185,7 +205,9 @@ def combat_log_embeds(
         value = "\n".join(event_line(e) for e in rounds[round_no])
         fields.append((name, value[:1024] or strings.COMBAT_ROUND_EMPTY))
     if not fields:  # a fight with no recorded events (shouldn't happen)
-        fields = [(strings.COMBAT_LOG_FIELD.format(round_no=0), strings.COMBAT_ROUND_EMPTY)]
+        fields = [
+            (strings.COMBAT_LOG_FIELD.format(round_no=0), strings.COMBAT_ROUND_EMPTY)
+        ]
 
     def _fresh() -> discord.Embed:
         embed = discord.Embed(color=color)
@@ -198,8 +220,10 @@ def combat_log_embeds(
     used, count = 0, 0
     for name, value in fields:
         cost = len(name) + len(value)
-        if count and (count >= COMBAT_LOG_FIELDS_PER_EMBED
-                      or used + cost > COMBAT_LOG_EMBED_CHAR_BUDGET):
+        if count and (
+            count >= COMBAT_LOG_FIELDS_PER_EMBED
+            or used + cost > COMBAT_LOG_EMBED_CHAR_BUDGET
+        ):
             embeds.append(current)
             current = _fresh()
             used, count = 0, 0
@@ -221,7 +245,9 @@ def round_embed(
         description="\n".join(lines)[:4000] or strings.COMBAT_ROUND_EMPTY,
         color=color,
     )
-    embed.set_footer(text=strings.COMBAT_ROUND.format(round_no=round_no, rounds_limit=rounds_limit))
+    embed.set_footer(
+        text=strings.COMBAT_ROUND.format(round_no=round_no, rounds_limit=rounds_limit)
+    )
     return embed
 
 
@@ -262,9 +288,7 @@ def _settlement_field(line, result: SimulationResult) -> tuple[str, str, int]:
             )
         mastery_lines.append(text)
 
-    ps = next(
-        (p for p in result.party if p.player.id == line.player.id), None
-    )
+    ps = next((p for p in result.party if p.player.id == line.player.id), None)
     # A top-damage or top-tank finish earns a crown -- on the field NAME (where
     # custom emojis render), since the value goes back inside a code block.
     header = line.player.username
@@ -275,18 +299,30 @@ def _settlement_field(line, result: SimulationResult) -> tuple[str, str, int]:
     groups: list[str] = []
     if ps is not None:
         sort_key = ps.damage_dealt + ps.damage_taken
-        header += strings.SKULL_EMOJI if not ps.alive else f" ({ps.current_hp:,}/{ps.max_hp:,} {strings.HEALTHPOINT_TITLE_SHORT})"
-        groups.append("\n".join([
-            f"{strings.SETTLE_DAMAGE_DEALT}: {ps.damage_dealt:,}",
-            f"{strings.SETTLE_DAMAGE_TAKEN}: {ps.damage_taken:,}",
-            f"{strings.SETTLE_HEAL_DONE}: {ps.healing_done:,}",
-        ]))
+        header += (
+            strings.SKULL_EMOJI
+            if not ps.alive
+            else f" ({ps.current_hp:,}/{ps.max_hp:,} {strings.HEALTHPOINT_TITLE_SHORT})"
+        )
+        groups.append(
+            "\n".join(
+                [
+                    f"{strings.SETTLE_DAMAGE_DEALT}: {ps.damage_dealt:,}",
+                    f"{strings.SETTLE_DAMAGE_TAKEN}: {ps.damage_taken:,}",
+                    f"{strings.SETTLE_HEAL_DONE}: {ps.healing_done:,}",
+                ]
+            )
+        )
     if mastery_lines:
         groups.append("\n".join(mastery_lines))
     rewards = []
     if line.drops:
         rewards.append(
-            strings.SETTLE_DROP + ": " + ", ".join(f"{mat.name}{strings.TIMES_EMOJI}{qty}" for mat, qty in line.drops)
+            strings.SETTLE_DROP
+            + ": "
+            + ", ".join(
+                f"{mat.name}{strings.TIMES_EMOJI}{qty}" for mat, qty in line.drops
+            )
         )
     if line.daily_contri:
         rewards.append(strings.SETTLE_DAILY_CONTRI.format(pts=line.daily_contri))
@@ -311,7 +347,9 @@ def settlement_embeds(
     elif result.rounded_out:
         title = strings.SETTLE_END.format(mob=result.mob.name, rounds=result.rounds + 1)
     else:
-        title = strings.SETTLE_LOST.format(mob=result.mob.name, rounds=result.rounds + 1)
+        title = strings.SETTLE_LOST.format(
+            mob=result.mob.name, rounds=result.rounds + 1
+        )
     blocks = []
     personal: dict[int, str] = {}
     for line in report.players:
@@ -326,7 +364,7 @@ def settlement_embeds(
         if report.upgrade_ready:
             note += "\n" + strings.LEGION_UPGRADE_READY_SHORT
 
-    pages = [blocks[i:i + per_page] for i in range(0, len(blocks), per_page)] or [[]]
+    pages = [blocks[i : i + per_page] for i in range(0, len(blocks), per_page)] or [[]]
     embeds = []
     for page_no, page in enumerate(pages, start=1):
         embed = discord.Embed(title=title, color=color)
@@ -382,11 +420,14 @@ def progress_bar(percent: float, length: int = BAR_LENGTH) -> str:
             pool = (strings.BODY_EMPTY, strings.BODY_HALF_FULL, strings.BODY_FULL)
         segments.append(pool[state])
     if segments[-2] == strings.BODY_FULL and percent < 100:
-        segments[-1] = strings.TAIL_HALF_FULL # show a half tail for 99.9% to avoid confusion with full
+        segments[-1] = (
+            strings.TAIL_HALF_FULL
+        )  # show a half tail for 99.9% to avoid confusion with full
     return "".join(segments)
 
 
 # --- profile & friends --------------------------------------------------------
+
 
 def profile_embed(
     player: Player,
@@ -409,18 +450,19 @@ def profile_embed(
         inline=False,
     )
     embed.add_field(
-        name=strings.BELONGS_TO_TITLE + strings.LEGION_REFER, 
+        name=strings.BELONGS_TO_TITLE + strings.LEGION_REFER,
         value=(
-            (legion.name if legion else strings.LEGION_DNE) + 
-            f"\n-# {strings.LEGION_CONTRIBUTION}: {player.contribution:,}"
+            (legion.name if legion else strings.LEGION_DNE)
+            + f"\n-# {strings.LEGION_CONTRIBUTION}: {player.contribution:,}"
         ),
-        inline=False
+        inline=False,
     )
     for slot in (WeaponSlot.MAIN, WeaponSlot.SUB):
         pw = equipped.get(slot)
         label = (
-            f"{strings.WEAPON_QUALITY_NAMES.get(pw.quality.value, '')} {pw.weapon.name}" \
-            if pw is not None else f"-# {strings.NOT_EQUIPPED_TITLE}"
+            f"{strings.WEAPON_QUALITY_NAMES.get(pw.quality.value, '')} {pw.weapon.name}"
+            if pw is not None
+            else f"-# {strings.NOT_EQUIPPED_TITLE}"
         )
         embed.add_field(name=f"{strings.WEAPON_HAND_NAMES[slot.value]}", value=label)
     return embed
@@ -431,8 +473,10 @@ def _mastery_field(name: str, level: int, exp: int) -> tuple[str, str]:
     name, the emoji bar + exp progress in the value. One field per mastery --
     a 10-segment bar is ~380 chars, so stacking them in one field would blow
     the 1024 cap."""
-    zone = strings.LOCK_EMOJI if level >= MASTERY_HARD_CAP else (
-        strings.ADDITION_EMOJI if level >= MASTERY_SOFT_CAP else ""
+    zone = (
+        strings.LOCK_EMOJI
+        if level >= MASTERY_HARD_CAP
+        else (strings.ADDITION_EMOJI if level >= MASTERY_SOFT_CAP else "")
     )
     field_name = f"{name} {strings.LEVEL_EMOJI} {level} {zone}".strip()
     if level >= MASTERY_HARD_CAP:
@@ -452,20 +496,21 @@ def mastery_embed(
     view's select menu -- the combined embed got too crowded with bar fields."""
     weapons = kind == MASTERY_KIND_WEAPONS
     section = strings.MASTERY_WEAPON if weapons else strings.MASTERY_LIFE
-    embed = discord.Embed(
-        title=f"\u00b7 {section}", color=color
-    )
+    embed = discord.Embed(title=f"\u00b7 {section}", color=color)
     if not masteries:
         embed.description = strings.MASTERY_NONE
     for m in masteries:
         display = (
-            m.category.name if weapons
+            m.category.name
+            if weapons
             else strings.LIFE_SKILL_NAMES.get(m.skill.value, m.skill.value)
         )
         name, value = _mastery_field(display, m.level, m.exp)
         embed.add_field(name=name, value=value, inline=False)
     embed.set_footer(
-        text=strings.MASTERY_FOOTER.format(softcap=MASTERY_SOFT_CAP, hardcap=MASTERY_HARD_CAP)
+        text=strings.MASTERY_FOOTER.format(
+            softcap=MASTERY_SOFT_CAP, hardcap=MASTERY_HARD_CAP
+        )
     )
     return embed
 
@@ -494,10 +539,7 @@ def inventory_home_embed(
         value=", ".join(mat_lines)[:3000] or strings.INVENTORY_EMPTY,
         inline=False,
     )
-    equipped_lines = [
-        f"**{_weapon_display(w)}**"
-        for w in equipped
-    ]
+    equipped_lines = [f"**{_weapon_display(w)}**" for w in equipped]
     embed.add_field(
         name=strings.INVENTORY_EQUIPPED_TITLE,
         value="\n".join(equipped_lines) or strings.INVENTORY_EMPTY,
@@ -573,6 +615,7 @@ def recipe_detail_embed(
     )
 
     if weapon is not None:
+
         def lock_suffix(req: int) -> str:
             if weapon_mastery >= req:
                 return ""
@@ -619,7 +662,9 @@ def recipe_detail_embed(
     mat_lines = [
         strings.CRAFT_MAT_LINE.format(
             mark=strings.CHECK_EMOJI if have >= need else strings.CROSS_EMOJI,
-            name=mat.name, have=have, need=need,
+            name=mat.name,
+            have=have,
+            need=need,
         )
         for mat, need, have in inputs
     ]
@@ -633,7 +678,7 @@ def recipe_detail_embed(
 
 def weapon_detail_embed(
     pw: PlayerWeapon,
-    actives: list,   # WeaponActiveSkill with .active_skill, ordered by tier
+    actives: list,  # WeaponActiveSkill with .active_skill, ordered by tier
     passives: list,  # WeaponPassiveSkill with .passive_skill, ordered by tier
     mastery_level: int,
     color: discord.Colour,
@@ -666,9 +711,7 @@ def weapon_detail_embed(
     def lock_suffix(req: int) -> str:
         if mastery_level >= req:
             return ""
-        return "\n" + strings.SKILL_LOCKED_TAG.format(
-            category=category.name, req=req
-        )
+        return "\n" + strings.SKILL_LOCKED_TAG.format(category=category.name, req=req)
 
     active_lines = []
     for mount in actives:
@@ -761,6 +804,7 @@ def inventory_consumables_embed(
 
 # --- legion --------------------------------------------------------------------
 
+
 def legion_embed(
     legion: Legion,
     member_count: int,
@@ -773,9 +817,10 @@ def legion_embed(
     embed.set_author(name=strings.LEGION_REFER + strings.INFO_TITLE)
     embed.add_field(name=strings.LEVEL_UNIT, value=str(legion.level))
     embed.add_field(
-        name=strings.EXPERIENCE_UNIT, 
-        value=f"{progress_bar(legion.exp / max(1, next_cost) * 100)}\n-# {legion.exp:,}/{next_cost:,}", 
-        inline=False)
+        name=strings.EXPERIENCE_UNIT,
+        value=f"{progress_bar(legion.exp / max(1, next_cost) * 100)}\n-# {legion.exp:,}/{next_cost:,}",
+        inline=False,
+    )
     embed.add_field(
         name=strings.MEMBERS_TITLE,
         value=f"{member_count:,}",
@@ -790,7 +835,7 @@ def legion_embed(
             name=(
                 f"{strings.LEVEL_EMOJI}{legion.level + 1} "
                 f"{strings.LEGION_UPDATE_SHEET}"
-                ),
+            ),
             value="\n".join(lines),
             inline=False,
         )
@@ -824,7 +869,9 @@ def members_embed(
         embed.description = (
             strings.LEGION_REFER + strings.MEMBERS_TITLE + strings.DNE_TITLE
         )
-    embed.set_footer(text=strings.PAGE_NUM_TITLE.format(page=page + 1, pages=max(1, pages)))
+    embed.set_footer(
+        text=strings.PAGE_NUM_TITLE.format(page=page + 1, pages=max(1, pages))
+    )
     return embed
 
 
@@ -898,17 +945,23 @@ def legion_settings_embed(
     embed.add_field(name=strings.LEGION_SETTINGS_NAME, value=legion.name)
     embed.add_field(
         name=strings.LEGION_SETTINGS_CHANNEL,
-        value=f"<#{legion.channel_id}>" if legion.channel_id else strings.LEGION_SETTINGS_NOT_SET,
+        value=(
+            f"<#{legion.channel_id}>"
+            if legion.channel_id
+            else strings.LEGION_SETTINGS_NOT_SET
+        ),
     )
     embed.add_field(
         name=strings.MANAGER_TITLE,
-        value="\n".join(f"- {m.username}" for m in managers) or strings.LEGION_SETTINGS_NOT_SET,
+        value="\n".join(f"- {m.username}" for m in managers)
+        or strings.LEGION_SETTINGS_NOT_SET,
         inline=False,
     )
     return embed
 
 
 # --- gathering -------------------------------------------------------------------
+
 
 def gather_idle_embed(
     sites: list[GatherSite],
@@ -940,16 +993,26 @@ def patch_status_embed(
 ) -> discord.Embed:
     embed = discord.Embed(title=strings.PATCH_TITLE, color=color)
     if current is not None:
-        embed.add_field(name=strings.PATCH_CURRENT, value=f"**{current.version}** `{current.hash}`")
+        embed.add_field(
+            name=strings.PATCH_CURRENT, value=f"**{current.version}** `{current.hash}`"
+        )
         if current.notes:
-            embed.add_field(name=strings.PATCH_NOTES, value=current.notes[:1000], inline=False)
+            embed.add_field(
+                name=strings.PATCH_NOTES, value=current.notes[:1000], inline=False
+            )
     else:
         embed.add_field(name=strings.PATCH_CURRENT, value=strings.DNE_TITLE)
-    embed.add_field(name=strings.PATCH_ON_DISK, value=f"**{disk_version}** `{disk_hash}`")
+    embed.add_field(
+        name=strings.PATCH_ON_DISK, value=f"**{disk_version}** `{disk_hash}`"
+    )
     stats = " · ".join(f"{k} {v}" for k, v in live_counts.items())
-    embed.add_field(name=strings.PATCH_LIVE_CONTENT, value=stats or strings.DNE_TITLE, inline=False)
+    embed.add_field(
+        name=strings.PATCH_LIVE_CONTENT, value=stats or strings.DNE_TITLE, inline=False
+    )
     if legion is not None:
-        embed.add_field(name=strings.PATCH_THIS_LEGION, value=f"{strings.LEVEL_EMOJI}{legion.level}")
+        embed.add_field(
+            name=strings.PATCH_THIS_LEGION, value=f"{strings.LEVEL_EMOJI}{legion.level}"
+        )
     return embed
 
 
@@ -987,9 +1050,12 @@ def gather_busy_embed(
         color=color,
     )
     embed.add_field(
-        name=strings.GATHER_AFK_SINCE, value=f"<t:{int(activity.started_at.timestamp())}:R>"
+        name=strings.GATHER_AFK_SINCE,
+        value=f"<t:{int(activity.started_at.timestamp())}:R>",
     )
-    embed.add_field(name=strings.GATHER_YIELDS, value="\n".join(possible) or strings.QUESTION_TITLE)
+    embed.add_field(
+        name=strings.GATHER_YIELDS, value="\n".join(possible) or strings.QUESTION_TITLE
+    )
     return embed
 
 
@@ -1004,7 +1070,7 @@ _CRAFT_SURFACES = (
 
 def craft_home_embed(
     groups: dict[str, list],  # surface -> [(Recipe, unlocked: bool)]
-    life_levels: dict,        # LifeSkillType/str -> level
+    life_levels: dict,  # LifeSkillType/str -> level
     color: discord.Colour,
 ) -> discord.Embed:
     embed = discord.Embed(
@@ -1016,13 +1082,18 @@ def craft_home_embed(
     for skill, desc in strings.CRAFT_DESC.items():
         embed.add_field(
             name=(
-                (f"{strings.LIFE_SKILL_NAMES.get(skill, skill)}") + 
-                ("" if skill == "forge" else f" {strings.CRAFT_MASTERY_TAG.format(level=levels.get(skill, 0))}")
+                (f"{strings.LIFE_SKILL_NAMES.get(skill, skill)}")
+                + (
+                    ""
+                    if skill == "forge"
+                    else f" {strings.CRAFT_MASTERY_TAG.format(level=levels.get(skill, 0))}"
+                )
             ),
             value=desc,
             inline=False,
         )
-    return embed 
+    return embed
+
 
 def craft_surface_embed(
     surface: str,
@@ -1034,7 +1105,7 @@ def craft_surface_embed(
     view shows no pager buttons."""
     _, emoji, title, _ = next(s for s in _CRAFT_SURFACES if s[0] == surface)
     chunks = [
-        entries[i:i + CRAFT_SURFACE_PAGE_SIZE]
+        entries[i : i + CRAFT_SURFACE_PAGE_SIZE]
         for i in range(0, len(entries), CRAFT_SURFACE_PAGE_SIZE)
     ] or [[]]
     embeds = []
@@ -1043,11 +1114,13 @@ def craft_surface_embed(
             title=f"{emoji} {title}{strings.SKILL_REFER}", color=color
         )
         for recipe, unlocked, inputs_text in chunk:
-            marker = '' if unlocked else strings.LOCK_EMOJI
+            marker = "" if unlocked else strings.LOCK_EMOJI
             req = ""
             if not unlocked and recipe.skill is not None:
                 req = "\n" + strings.CRAFT_NEED_MASTERY.format(
-                    skill=strings.LIFE_SKILL_NAMES.get(recipe.skill.value, recipe.skill.value),
+                    skill=strings.LIFE_SKILL_NAMES.get(
+                        recipe.skill.value, recipe.skill.value
+                    ),
                     req=recipe.mastery_level_required,
                 )
             embed.add_field(

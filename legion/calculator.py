@@ -29,6 +29,7 @@ from maki.cogs.legion.constants import (
     QUALITY_TIER_THRESHOLDS,
     WeaponQuality,
 )
+
 if TYPE_CHECKING:
     # Type hints only -- a runtime import here would be circular
     # (model/__init__ -> repository -> calculator).
@@ -38,11 +39,14 @@ if TYPE_CHECKING:
 def get_hp_bonus(level: int) -> int:
     return level * 10
 
+
 def get_shield_bonus(level: int) -> int:
     return level * 5
 
+
 def get_def_bonus(level: int) -> int:
     return level * 3
+
 
 def get_regen_rate(level: int) -> int:
     return int(level * 0.1)  # HP per minute
@@ -52,18 +56,20 @@ def get_mob_stats(mob: Mob, danger: int, player_count: int) -> dict:
     """Mob stats scale off the hunting ground's DANGER rating + party size.
     Legion level never scales mobs -- it only unlocks grounds (no treadmill)."""
     danger_modifier = 1 + (danger * 0.1)
-    player_modifier  = 1 + (player_count * 0.2)
+    player_modifier = 1 + (player_count * 0.2)
     player_modifier_low = 1 + (player_count * 0.05)
 
     return {
-        "hp"    : int(mob.base_hp    * danger_modifier * player_modifier),
-        "atk"   : int(mob.base_atk   * danger_modifier * player_modifier),
-        "def"   : int(mob.base_def   * danger_modifier * player_modifier_low),
-        "speed" : int(mob.base_speed * danger_modifier * player_modifier_low),
+        "hp": int(mob.base_hp * danger_modifier * player_modifier),
+        "atk": int(mob.base_atk * danger_modifier * player_modifier),
+        "def": int(mob.base_def * danger_modifier * player_modifier_low),
+        "speed": int(mob.base_speed * danger_modifier * player_modifier_low),
     }
+
 
 # --- Mastery math ---------------------------------------------------------
 # Storage convention: `exp` is progress *within* the current level.
+
 
 def mastery_level_cost(level: int) -> int:
     """Exp required to advance from ``level - 1`` to ``level``."""
@@ -77,9 +83,7 @@ def drainable_exp(level: int, exp: int) -> int:
     """
     if level < MASTERY_SOFT_CAP:
         return 0
-    above = sum(
-        mastery_level_cost(lv) for lv in range(MASTERY_SOFT_CAP + 1, level + 1)
-    )
+    above = sum(mastery_level_cost(lv) for lv in range(MASTERY_SOFT_CAP + 1, level + 1))
     return above + exp
 
 
@@ -139,13 +143,14 @@ class MasteryGrant:
 
     pts: int
     levels_gained: int
-    category: str | None = None      # display name of the mastery that GAINED
+    category: str | None = None  # display name of the mastery that GAINED
     drained_from: str | None = None  # category/skill name the drain hit
     drained_pts: int = 0
-    levels_lost: int = 0             # levels the victim lost (skills may re-lock)
+    levels_lost: int = 0  # levels the victim lost (skills may re-lock)
 
 
 # --- Legion progression ---------------------------------------------------
+
 
 def legion_level_cost(level: int) -> int:
     """Exp required to advance a legion from ``level - 1`` to ``level``."""
@@ -163,6 +168,7 @@ def legion_upgrade_qty(base_qty: int, member_count: int) -> int:
 
 
 # --- Loot ------------------------------------------------------------------
+
 
 def roll_drops(
     drops: Sequence[MobDrop], rolls: int, rng: random.Random | None = None
@@ -185,6 +191,7 @@ def roll_drops(
 
 
 # --- Craft mutation ----------------------------------------------------------
+
 
 def roll_mutations(
     skill_ids: Sequence[int], legion_level: int, rng: random.Random | None = None
@@ -224,8 +231,16 @@ import ast as _ast
 FORMULA_VARS = ("atk", "attack", "def", "defense", "speed", "hp", "max_hp")
 
 _ALLOWED_NODES = (
-    _ast.Expression, _ast.BinOp, _ast.UnaryOp, _ast.Constant,
-    _ast.Add, _ast.Sub, _ast.Mult, _ast.Div, _ast.USub, _ast.UAdd,
+    _ast.Expression,
+    _ast.BinOp,
+    _ast.UnaryOp,
+    _ast.Constant,
+    _ast.Add,
+    _ast.Sub,
+    _ast.Mult,
+    _ast.Div,
+    _ast.USub,
+    _ast.UAdd,
 )
 
 
@@ -249,9 +264,7 @@ def eval_formula(expr: str | int | float, stats: dict | None = None) -> int:
     for node in _ast.walk(tree):
         if not isinstance(node, _ALLOWED_NODES):
             raise ValueError(f"disallowed syntax in formula {expr!r}")
-        if isinstance(node, _ast.Constant) and not isinstance(
-            node.value, (int, float)
-        ):
+        if isinstance(node, _ast.Constant) and not isinstance(node.value, (int, float)):
             raise ValueError(f"non-numeric constant in formula {expr!r}")
     return round(eval(compile(tree, "<formula>", "eval")))  # noqa: S307 -- whitelisted
 
@@ -275,6 +288,7 @@ def mutated(value: int, pct: int | None) -> int:
 
 
 # --- Gathering ----------------------------------------------------------------
+
 
 def bag_hours(gather_level: int) -> int:
     """Max counted AFK hours -- the gather mastery's whole job."""

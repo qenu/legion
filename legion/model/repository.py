@@ -101,7 +101,10 @@ class PlayerRepo:
         player.is_legion_manager = False
         await player.save(
             update_fields=[
-                "legion_id", "left_legion_at", "contribution", "is_legion_manager"
+                "legion_id",
+                "left_legion_at",
+                "contribution",
+                "is_legion_manager",
             ]
         )
 
@@ -110,7 +113,10 @@ class PlayerRepo:
         await player.save(update_fields=["contribution"])
 
     async def apply_regen(
-        self, player: Player, legion_level: int, effective_max: int | None = None,
+        self,
+        player: Player,
+        legion_level: int,
+        effective_max: int | None = None,
         bonus_regen: int = 0,
     ) -> int:
         """Lazy out-of-combat regen: heal elapsed-minutes * rate since the
@@ -140,7 +146,9 @@ class PlayerRepo:
         if minutes <= 0:
             return 0
         cap = effective_max or player.max_health_points
-        rate = BASE_REGEN_PER_MINUTE + get_regen_rate(legion_level) + max(0, bonus_regen)
+        rate = (
+            BASE_REGEN_PER_MINUTE + get_regen_rate(legion_level) + max(0, bonus_regen)
+        )
         healed = minutes * rate
 
         # Food buff overlap: buffed minutes inside [last, last+minutes].
@@ -210,7 +218,11 @@ class LegionRepo:
     # -- stockpile & upgrades --
 
     async def donate(
-        self, player: Player, legion: Legion, material: Material, qty: int,
+        self,
+        player: Player,
+        legion: Legion,
+        material: Material,
+        qty: int,
         need: int = 0,
     ) -> tuple[int, int] | None:
         """Move up to ``qty`` mats from a player's inventory into the legion
@@ -268,7 +280,8 @@ class LegionRepo:
         """Admin: add to the stockpile, clamped at MAX_ITEM_STACK. New total."""
         async with in_transaction():
             pile, created = await LegionStockpile.get_or_create(
-                legion=legion, material=material,
+                legion=legion,
+                material=material,
                 defaults={"quantity": min(qty, MAX_ITEM_STACK)},
             )
             if not created:
@@ -301,9 +314,7 @@ class LegionRepo:
             Q(last_active_at__gte=cutoff) | Q(last_active_at__isnull=True),
         ).count()
 
-    async def upgrade_sheet(
-        self, legion: Legion
-    ) -> list[tuple[Material, int, int]]:
+    async def upgrade_sheet(self, legion: Legion) -> list[tuple[Material, int, int]]:
         """Requirements for the NEXT level: ``(material, needed, stockpiled)``
         with needed already scaled by the ACTIVE member count."""
         members = await self.active_member_count(legion)
@@ -315,7 +326,11 @@ class LegionRepo:
             for p in await LegionStockpile.filter(legion=legion)
         }
         return [
-            (c.material, legion_upgrade_qty(c.base_qty, members), piles.get(c.material_id, 0))
+            (
+                c.material,
+                legion_upgrade_qty(c.base_qty, members),
+                piles.get(c.material_id, 0),
+            )
             for c in costs
         ]
 
@@ -323,9 +338,7 @@ class LegionRepo:
         """Perform the upgrade: banked exp >= cost AND stockpile covers the
         sheet. Consumes both and levels up. False if anything is short."""
         async with in_transaction():
-            locked = (
-                await Legion.filter(id=legion.id).select_for_update().first()
-            )
+            locked = await Legion.filter(id=legion.id).select_for_update().first()
             if locked is None or not upgrade_ready(locked.level, locked.exp):
                 return False
             sheet = await self.upgrade_sheet(locked)
@@ -351,13 +364,12 @@ class InventoryRepo:
 
     # -- materials --
 
-    async def add_material(
-        self, player: Player, material: Material, qty: int
-    ) -> None:
+    async def add_material(self, player: Player, material: Material, qty: int) -> None:
         """Add to a player's stack, clamped at MAX_ITEM_STACK (excess lost)."""
         async with in_transaction():
             stack, created = await PlayerMaterial.get_or_create(
-                player=player, material=material,
+                player=player,
+                material=material,
                 defaults={"quantity": min(qty, MAX_ITEM_STACK)},
             )
             if not created:
@@ -372,11 +384,9 @@ class InventoryRepo:
         """Atomically spend ``{material_id: qty}``. All-or-nothing: returns
         False (spending nothing) if any stack is short."""
         async with in_transaction():
-            stacks = (
-                await PlayerMaterial.filter(
-                    player=player, material_id__in=list(costs)
-                ).select_for_update()
-            )
+            stacks = await PlayerMaterial.filter(
+                player=player, material_id__in=list(costs)
+            ).select_for_update()
             by_material = {s.material_id: s for s in stacks}
             for material_id, qty in costs.items():
                 stack = by_material.get(material_id)
@@ -476,9 +486,7 @@ class ActivityRepo:
             player=player, collected=False
         ).prefetch_related("site")
 
-    async def start(
-        self, player: Player, site: GatherSite
-    ) -> PlayerActivity | None:
+    async def start(self, player: Player, site: GatherSite) -> PlayerActivity | None:
         """Begin an open-ended session, or return None if one is running."""
         async with in_transaction():
             existing = (
@@ -555,9 +563,7 @@ class MasteryRepo:
             )
             await mastery.save(update_fields=["level", "exp"])
 
-            grant = MasteryGrant(
-                pts=pts, levels_gained=gained, category=category.name
-            )
+            grant = MasteryGrant(pts=pts, levels_gained=gained, category=category.name)
             if zero_sum:
                 victims = [
                     m
@@ -590,9 +596,7 @@ class MasteryRepo:
             )
             await mastery.save(update_fields=["level", "exp"])
 
-            grant = MasteryGrant(
-                pts=pts, levels_gained=gained, category=skill.value
-            )
+            grant = MasteryGrant(pts=pts, levels_gained=gained, category=skill.value)
             if zero_sum:
                 pool = GATHER_SKILLS if skill in GATHER_SKILLS else CRAFT_SKILLS
                 victims = [
@@ -646,8 +650,12 @@ class PatchRepo:
             if existing is not None:
                 return None
             return await GamePatch.create(
-                hash=hash_, version=version, notes=notes, summary=summary,
-                lock_at=lock_at, apply_at=apply_at,
+                hash=hash_,
+                version=version,
+                notes=notes,
+                summary=summary,
+                lock_at=lock_at,
+                apply_at=apply_at,
             )
 
     async def cancel(self, patch: "GamePatch") -> None:
@@ -664,7 +672,10 @@ class PatchRepo:
     ) -> "GamePatch":
         """Direct apply (force update / first bootstrap): record as APPLIED."""
         return await GamePatch.create(
-            hash=hash_, version=version, notes=notes, summary=summary,
+            hash=hash_,
+            version=version,
+            notes=notes,
+            summary=summary,
             status=PatchStatus.APPLIED,
             applied_at=datetime.now().astimezone(),
         )
@@ -721,9 +732,13 @@ class DungeonRepo:
     async def active_for_player(self, player: Player) -> DungeonInstance | None:
         """The ACTIVE (pre-settlement) run this player has joined, or None.
         Ground prefetched for the block message."""
-        dp = await DungeonParticipant.filter(
-            player=player, instance__status=DungeonStatus.ACTIVE
-        ).prefetch_related("instance__ground").first()
+        dp = (
+            await DungeonParticipant.filter(
+                player=player, instance__status=DungeonStatus.ACTIVE
+            )
+            .prefetch_related("instance__ground")
+            .first()
+        )
         return dp.instance if dp is not None else None
 
     async def spawn(
@@ -737,9 +752,7 @@ class DungeonRepo:
         """Create an ACTIVE instance, or return None if one already exists."""
         async with in_transaction():
             existing = (
-                await DungeonInstance.filter(
-                    legion=legion, status=DungeonStatus.ACTIVE
-                )
+                await DungeonInstance.filter(legion=legion, status=DungeonStatus.ACTIVE)
                 .select_for_update()
                 .first()
             )

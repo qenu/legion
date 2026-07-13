@@ -93,12 +93,14 @@ FREEZE_FLAG_KEY = "maintenance_freeze"
 class _CaptchaState:
     """Per-user anti-script state, kept in memory only (cleared on restart)."""
 
-    last_at: datetime | None = None   # last expedition attempt
-    last_interval: int = 0            # previous gap, seconds
-    streak: int = 0                   # regular-gap run length
-    runs: int = 0                     # consecutive expeditions this session (volume)
-    fails: int = 0                    # consecutive test failures
+    last_at: datetime | None = None  # last expedition attempt
+    last_interval: int = 0  # previous gap, seconds
+    streak: int = 0  # regular-gap run length
+    runs: int = 0  # consecutive expeditions this session (volume)
+    fails: int = 0  # consecutive test failures
     locked_until: datetime | None = None  # soft-lockout expiry
+
+
 from maki.cogs.legion.seeds import (
     apply_patch,
     content_hash,
@@ -165,7 +167,7 @@ class LegionCog(commands.Cog):
         )
         self.patches = PatchRepo()
         self.system = SystemRepo()
-        self._lobby_tasks: dict[int, asyncio.Task] = {}   # legion_id -> timer
+        self._lobby_tasks: dict[int, asyncio.Task] = {}  # legion_id -> timer
         self._replay_tasks: set[asyncio.Task] = set()
         self._pending_patch: GamePatch | None = None
         self._patch_task: asyncio.Task | None = None
@@ -187,7 +189,8 @@ class LegionCog(commands.Cog):
             name=strings.USE_ITEM_CONTEXT_NAME, callback=self.use_item_context
         )
         self._showoff_profile_menu = app_commands.ContextMenu(
-            name=strings.CHECK_PROFILE_CONTEXT_NAME, callback=self.showoff_profile_context
+            name=strings.CHECK_PROFILE_CONTEXT_NAME,
+            callback=self.showoff_profile_context,
         )
 
     async def cog_load(self) -> None:
@@ -245,9 +248,7 @@ class LegionCog(commands.Cog):
             await interaction.response.send_message(msg, ephemeral=True)
 
     @staticmethod
-    async def _edit_tracked(
-        interaction: discord.Interaction, **kwargs
-    ) -> None:
+    async def _edit_tracked(interaction: discord.Interaction, **kwargs) -> None:
         """edit_message + hand the (new) view its message so on_timeout can
         strip dead buttons even if the view is never pressed. Deferred-aware:
         after _defer() the token-bound response is spent, so edits go through
@@ -261,9 +262,7 @@ class LegionCog(commands.Cog):
             await interaction.response.edit_message(**kwargs)
 
     @staticmethod
-    async def _defer(
-        interaction: discord.Interaction, ephemeral: bool = False
-    ) -> None:
+    async def _defer(interaction: discord.Interaction, ephemeral: bool = False) -> None:
         """Acknowledge within Discord's 3s window BEFORE doing DB work --
         prevents 10062 Unknown interaction on slow paths. Component presses defer
         the message update (ephemeral is ignored there); slash commands should
@@ -282,13 +281,9 @@ class LegionCog(commands.Cog):
     # --- interceptors ------------------------------------------------------
 
     async def _legion_for(self, guild: discord.Guild) -> Legion:
-        return await self.legions.get_or_create(
-            guild.id, clean_legion_name(guild.name)
-        )
+        return await self.legions.get_or_create(guild.id, clean_legion_name(guild.name))
 
-    async def ensure_player(
-        self, interaction: discord.Interaction
-    ) -> Player | None:
+    async def ensure_player(self, interaction: discord.Interaction) -> Player | None:
         """The onboarding interceptor: returns the (regen-applied) player, or
         sends the ephemeral weapon-pick prompt and returns None. Also the
         full-freeze patch gate: every game command passes through here."""
@@ -426,7 +421,8 @@ class LegionCog(commands.Cog):
     # --- /expedition ---------------------------------------------------------
 
     @app_commands.command(
-        name=strings.EXPEDITION_COMMAND_NAME, description=strings.EXPEDITION_COMMAND_DESC
+        name=strings.EXPEDITION_COMMAND_NAME,
+        description=strings.EXPEDITION_COMMAND_DESC,
     )
     @app_commands.guild_only()
     async def expedition(self, interaction: discord.Interaction) -> None:
@@ -495,8 +491,10 @@ class LegionCog(commands.Cog):
         uid = interaction.user.id
         if uid in self.bot.blacklist:  # bot-wide core blacklist
             await self._edit_tracked(
-                interaction, content=strings.CAPTCHA_BLACKLISTED,
-                embed=None, view=None,
+                interaction,
+                content=strings.CAPTCHA_BLACKLISTED,
+                embed=None,
+                view=None,
             )
             return False
         now = datetime.now(timezone.utc)
@@ -507,7 +505,8 @@ class LegionCog(commands.Cog):
                 content=strings.CAPTCHA_LOCKED.format(
                     until=int(st.locked_until.timestamp())
                 ),
-                embed=None, view=None,
+                embed=None,
+                view=None,
             )
             return False
         # A fail streak (post-lockout) force-tests until a pass clears it;
@@ -520,7 +519,11 @@ class LegionCog(commands.Cog):
                 return True
         log.info(
             "Captcha challenge: user {} ({}, streak={}, runs={}, fails={})",
-            uid, reason, st.streak, st.runs, st.fails,
+            uid,
+            reason,
+            st.streak,
+            st.runs,
+            st.fails,
         )
         answer = random.randint(1, 9)
         others = random.sample(
@@ -532,7 +535,8 @@ class LegionCog(commands.Cog):
         await self._edit_tracked(
             interaction,
             content=strings.CAPTCHA_PROMPT.format(answer=answer),
-            embed=None, view=view,
+            embed=None,
+            view=view,
         )
         view.message = await interaction.original_response()
         return False
@@ -552,13 +556,14 @@ class LegionCog(commands.Cog):
         bot-wide core blacklist."""
         uid = interaction.user.id
         st = self._captcha.setdefault(uid, _CaptchaState())
-        secs = CAPTCHA_LOCKOUT_BASE * (2 ** st.fails)
+        secs = CAPTCHA_LOCKOUT_BASE * (2**st.fails)
         if secs >= CAPTCHA_BLACKLIST_AT_SECONDS:
             await self.bot.add_to_blacklist(uid)
             self._captcha.pop(uid, None)
             log.warning(
                 "Captcha blacklist: user {} hit the lockout ceiling "
-                "(added to the bot-wide blacklist)", uid,
+                "(added to the bot-wide blacklist)",
+                uid,
             )
             await interaction.response.edit_message(
                 content=strings.CAPTCHA_BLACKLISTED, embed=None, view=None
@@ -566,14 +571,13 @@ class LegionCog(commands.Cog):
             return
         st.locked_until = datetime.now(timezone.utc) + timedelta(seconds=secs)
         st.fails += 1
-        log.info(
-            "Captcha fail: user {} locked {}s (fail #{})", uid, secs, st.fails
-        )
+        log.info("Captcha fail: user {} locked {}s (fail #{})", uid, secs, st.fails)
         await interaction.response.edit_message(
             content=strings.CAPTCHA_FAILED.format(
                 until=int(st.locked_until.timestamp())
             ),
-            embed=None, view=None,
+            embed=None,
+            view=None,
         )
 
     async def show_ground_list(
@@ -584,9 +588,11 @@ class LegionCog(commands.Cog):
         grounds = await self.dungeons.unlocked_grounds(legion.level)
         if not grounds:
             if edit:
-                await self._edit_tracked(interaction,
+                await self._edit_tracked(
+                    interaction,
                     content="No hunting grounds are open to this legion yet.",
-                    embed=None, view=None,
+                    embed=None,
+                    view=None,
                 )
             else:
                 await interaction.response.send_message(
@@ -639,14 +645,14 @@ class LegionCog(commands.Cog):
         else:
             ground = next((g for g in grounds if str(g.id) == value), None)
         if ground is None:
-            await self._edit_tracked(interaction,
-                content=strings.HUNTING_GROUND_GONE, embed=None, view=None
+            await self._edit_tracked(
+                interaction, content=strings.HUNTING_GROUND_GONE, embed=None, view=None
             )
             return
         mob = await self.dungeons.roll_mob(ground)
         if mob is None:
-            await self._edit_tracked(interaction,
-                content=strings.HUNTING_MOB_GONE, embed=None, view=None
+            await self._edit_tracked(
+                interaction, content=strings.HUNTING_MOB_GONE, embed=None, view=None
             )
             return
         expires_at = datetime.now().astimezone() + timedelta(seconds=LOBBY_SECONDS)
@@ -654,8 +660,11 @@ class LegionCog(commands.Cog):
             legion, ground, mob, expires_at, random_ground=is_random
         )
         if instance is None:
-            await self._edit_tracked(interaction,
-                content=strings.HUNTING_EXPEDITION_BUSY_SHORT, embed=None, view=None
+            await self._edit_tracked(
+                interaction,
+                content=strings.HUNTING_EXPEDITION_BUSY_SHORT,
+                embed=None,
+                view=None,
             )
             return
         await self.dungeons.join(instance, player)  # starter auto-joins
@@ -667,18 +676,16 @@ class LegionCog(commands.Cog):
         lobby_view = LobbyView(self, instance.id)
         message = await channel.send(embed=embed, view=lobby_view)
         lobby_view.message = message
-        await self._edit_tracked(interaction,
+        await self._edit_tracked(
+            interaction,
             content=strings.EXPEDITION_INIT.format(channel=channel.mention),
-            embed=None, view=None,
+            embed=None,
+            view=None,
         )
 
-        task = asyncio.create_task(
-            self._run_lobby(instance.id, legion.id, message)
-        )
+        task = asyncio.create_task(self._run_lobby(instance.id, legion.id, message))
         self._lobby_tasks[legion.id] = task
-        task.add_done_callback(
-            lambda _: self._lobby_tasks.pop(legion.id, None)
-        )
+        task.add_done_callback(lambda _: self._lobby_tasks.pop(legion.id, None))
 
     async def join_expedition(
         self, interaction: discord.Interaction, instance_id: int
@@ -738,13 +745,9 @@ class LegionCog(commands.Cog):
         ).prefetch_related("player__legion")
         if not participants:
             await self.dungeons.expire(instance)
-            await message.edit(
-                embed=render.expired_embed(self.bot.color), view=None
-            )
+            await message.edit(embed=render.expired_embed(self.bot.color), view=None)
             return
-        task = asyncio.create_task(
-            self._run_fight(instance, participants, message)
-        )
+        task = asyncio.create_task(self._run_fight(instance, participants, message))
         self._replay_tasks.add(task)
         task.add_done_callback(self._replay_tasks.discard)
 
@@ -805,7 +808,9 @@ class LegionCog(commands.Cog):
 
     # --- /legion ----------------------------------------------------------------
 
-    @app_commands.command(name=strings.LEGION_COMMAND_NAME, description=strings.LEGION_COMMAND_DESC)
+    @app_commands.command(
+        name=strings.LEGION_COMMAND_NAME, description=strings.LEGION_COMMAND_DESC
+    )
     @app_commands.guild_only()
     async def legion(self, interaction: discord.Interaction) -> None:
         log.debug("/legion by user {}", interaction.user.id)
@@ -922,9 +927,7 @@ class LegionCog(commands.Cog):
         player.last_supply_at = now
         await player.save(update_fields=["last_supply_at"])
         mats = "、".join(f"{m.name}×{q:,}" for m, q in granted)
-        await self._notify(
-            interaction, strings.DAILY_SUPPLY_RECEIVED.format(mats=mats)
-        )
+        await self._notify(interaction, strings.DAILY_SUPPLY_RECEIVED.format(mats=mats))
 
     async def show_members(
         self, interaction: discord.Interaction, legion: Legion, page: int
@@ -940,10 +943,9 @@ class LegionCog(commands.Cog):
             .offset(page * size)
             .limit(size)
         )
-        await self._edit_tracked(interaction, 
-            embed=render.members_embed(
-                legion, entries, page, pages, self.bot.color
-            ),
+        await self._edit_tracked(
+            interaction,
+            embed=render.members_embed(legion, entries, page, pages, self.bot.color),
             view=MembersView(self, interaction.user.id, player, legion, page, pages),
         )
 
@@ -967,7 +969,8 @@ class LegionCog(commands.Cog):
             ).prefetch_related("material")
             if s.material_id in sheet_map
         ]
-        await self._edit_tracked(interaction,
+        await self._edit_tracked(
+            interaction,
             content=note,
             embed=render.donate_embed(legion, stacks, sheet_map, self.bot.color),
             view=DonateView(
@@ -994,7 +997,8 @@ class LegionCog(commands.Cog):
         if material is None or material.id not in sheet_map:
             # Authoritative gate: only upgrade-requirement mats earn/donate.
             await self.show_donate(
-                interaction, legion,
+                interaction,
+                legion,
                 note=strings.LEGION_DONATE_NOT_NEEDED.format(
                     material=material.name if material else "?"
                 ),
@@ -1079,7 +1083,8 @@ class LegionCog(commands.Cog):
         legion.channel_id = channel_id
         await legion.save(update_fields=["channel_id"])
         await self.show_legion_settings(
-            interaction, legion,
+            interaction,
+            legion,
             note=strings.LEGION_CHANNEL_SET.format(channel=f"<#{channel_id}>"),
         )
 
@@ -1100,7 +1105,8 @@ class LegionCog(commands.Cog):
         player.is_legion_manager = True
         await player.save(update_fields=["is_legion_manager"])
         await self.show_legion_settings(
-            interaction, legion,
+            interaction,
+            legion,
             note=strings.LEGION_MANAGER_SET.format(player=player.username),
         )
 
@@ -1115,7 +1121,8 @@ class LegionCog(commands.Cog):
         legion.name = clean_legion_name(raw)
         await legion.save(update_fields=["name"])
         await self.show_legion_settings(
-            interaction, legion,
+            interaction,
+            legion,
             note=strings.LEGION_RENAMED.format(name=legion.name),
         )
 
@@ -1159,7 +1166,9 @@ class LegionCog(commands.Cog):
 
     # --- /profile -----------------------------------------------------------------
 
-    @app_commands.command(name=strings.PROFILE_COMMAND_NAME, description=strings.PROFILE_COMMAND_DESC)
+    @app_commands.command(
+        name=strings.PROFILE_COMMAND_NAME, description=strings.PROFILE_COMMAND_DESC
+    )
     async def profile(self, interaction: discord.Interaction) -> None:
         log.debug("/account by user {}", interaction.user.id)
         await self._defer(interaction, ephemeral=True)
@@ -1247,7 +1256,8 @@ class LegionCog(commands.Cog):
         equipped = await PlayerWeapon.filter(
             player=player, equipped_slot__isnull=False
         ).prefetch_related("weapon")
-        await self._edit_tracked(interaction, 
+        await self._edit_tracked(
+            interaction,
             content=None,
             embed=render.inventory_home_embed(stacks, equipped, self.bot.color),
             view=InventoryHomeView(self, interaction.user.id, player),
@@ -1277,7 +1287,9 @@ class LegionCog(commands.Cog):
                 player=player,
                 quantity__gt=0,
                 material__kind__in=[
-                    MaterialKind.FOOD, MaterialKind.POTION, MaterialKind.CONSUMABLE
+                    MaterialKind.FOOD,
+                    MaterialKind.POTION,
+                    MaterialKind.CONSUMABLE,
                 ],
             ).prefetch_related("material")
             embed = render.inventory_consumables_embed(consumables, self.bot.color)
@@ -1286,12 +1298,14 @@ class LegionCog(commands.Cog):
                 None,
             )
             view = InventoryCategoryView(
-                self, interaction.user.id, player, kind,
-                consumables=consumables, placeholder=placeholder,
+                self,
+                interaction.user.id,
+                player,
+                kind,
+                consumables=consumables,
+                placeholder=placeholder,
             )
-        await self._edit_tracked(interaction, 
-            content=note, embed=embed, view=view
-        )
+        await self._edit_tracked(interaction, content=note, embed=embed, view=view)
 
     async def show_mastery(
         self,
@@ -1306,7 +1320,8 @@ class LegionCog(commands.Cog):
             )
         else:
             masteries = await LifeSkillMastery.filter(player=player)
-        await self._edit_tracked(interaction,
+        await self._edit_tracked(
+            interaction,
             embed=render.mastery_embed(kind, masteries, self.bot.color),
             view=LegionMasteryView(self, interaction.user.id, player, kind),
         )
@@ -1348,7 +1363,9 @@ class LegionCog(commands.Cog):
             interaction,
             content=note,
             embed=render.weapon_detail_embed(
-                pw, actives, passives,
+                pw,
+                actives,
+                passives,
                 mastery.level if mastery else 0,
                 self.bot.color,
             ),
@@ -1392,7 +1409,10 @@ class LegionCog(commands.Cog):
         else:
             material, note = await self._use_consumable(player, int(raw_id))
             await self.show_inventory_category(
-                interaction, player, KIND_CONSUMABLES, note=note,
+                interaction,
+                player,
+                KIND_CONSUMABLES,
+                note=note,
                 used_id=material.id if material is not None else None,
             )
 
@@ -1418,7 +1438,8 @@ class LegionCog(commands.Cog):
         confirm = DismantleConfirmView(self, interaction.user.id, player, pw_id)
         await interaction.response.send_message(
             strings.INVENTORY_DISMANTLE_CONFIRM.format(weapon=pw.weapon.name),
-            view=confirm, ephemeral=True,
+            view=confirm,
+            ephemeral=True,
         )
         confirm.message = await interaction.original_response()
 
@@ -1431,14 +1452,18 @@ class LegionCog(commands.Cog):
         pw = await PlayerWeapon.get_or_none(id=pw_id).prefetch_related("weapon")
         if pw is None or pw.player_id != player.id:
             await self._edit_tracked(
-                interaction, content=strings.INVENTORY_CANNOT_DISMANTLE,
-                embed=None, view=None,
+                interaction,
+                content=strings.INVENTORY_CANNOT_DISMANTLE,
+                embed=None,
+                view=None,
             )
             return
         if pw.equipped_slot is not None:
             await self._edit_tracked(
-                interaction, content=strings.INVENTORY_CANNOT_DISMANTLE_EQUIPPED,
-                embed=None, view=None,
+                interaction,
+                content=strings.INVENTORY_CANNOT_DISMANTLE_EQUIPPED,
+                embed=None,
+                view=None,
             )
             return
         name = pw.weapon.name
@@ -1473,9 +1498,8 @@ class LegionCog(commands.Cog):
         if (
             material is None
             or material.status != ContentStatus.ENABLED
-            or material.kind not in (
-                MaterialKind.FOOD, MaterialKind.POTION, MaterialKind.CONSUMABLE
-            )
+            or material.kind
+            not in (MaterialKind.FOOD, MaterialKind.POTION, MaterialKind.CONSUMABLE)
             or material.stat_bonus_type is None
         ):
             return None, "That can't be used right now."
@@ -1510,11 +1534,15 @@ class LegionCog(commands.Cog):
                 )
                 if on_other:
                     return material, strings.FOOD_BUFF_APPLIED_OTHER.format(
-                        target=recipient.username, material=material.name,
-                        value=value, duration=duration,
+                        target=recipient.username,
+                        material=material.name,
+                        value=value,
+                        duration=duration,
                     )
                 return material, strings.FOOD_BUFF_APPLIED.format(
-                    material=material.name, value=value, duration=duration,
+                    material=material.name,
+                    value=value,
+                    duration=duration,
                 )
 
             # Timed combat-stat buff (atk/def/speed/taunt): re-eating refreshes
@@ -1529,12 +1557,17 @@ class LegionCog(commands.Cog):
             category = strings.STAT_NAMES.get(str(stype), str(stype))
             if on_other:
                 return material, strings.FOOD_BUFF_EFFECT_APPLIED_OTHER.format(
-                    target=recipient.username, material=material.name,
-                    value=value, category=category, duration=duration,
+                    target=recipient.username,
+                    material=material.name,
+                    value=value,
+                    category=category,
+                    duration=duration,
                 )
             return material, strings.FOOD_BUFF_EFFECT_APPLIED.format(
-                material=material.name, value=value,
-                category=category, duration=duration,
+                material=material.name,
+                value=value,
+                category=category,
+                duration=duration,
             )
 
         # potion / consumable: instant, revive-capable
@@ -1572,9 +1605,7 @@ class LegionCog(commands.Cog):
     ) -> None:
         """Entry: right-click member -> Apps -> 使用道具. Ephemeral picker of
         the INVOKER'S consumables; effects land on the target (revive included)."""
-        log.debug(
-            "use-item menu by user {} on {}", interaction.user.id, member.id
-        )
+        log.debug("use-item menu by user {} on {}", interaction.user.id, member.id)
         if interaction.guild is None:
             return
         player = await self.ensure_player(interaction)
@@ -1602,7 +1633,8 @@ class LegionCog(commands.Cog):
         view = UseItemView(self, interaction.user.id, member.id, stacks)
         await interaction.response.send_message(
             strings.USE_ITEM_PICK.format(target=target.username),
-            view=view, ephemeral=True,
+            view=view,
+            ephemeral=True,
         )
         view.message = await interaction.original_response()
 
@@ -1639,7 +1671,8 @@ class LegionCog(commands.Cog):
             legion = await self._legion_for(interaction.guild)
             channel = (
                 interaction.guild.get_channel(legion.channel_id)
-                if legion.channel_id else None
+                if legion.channel_id
+                else None
             )
             if channel is not None:
                 await channel.send(
@@ -1681,15 +1714,17 @@ class LegionCog(commands.Cog):
             quantity__gt=0,
             material__status=ContentStatus.ENABLED,
             material__kind__in=[
-                MaterialKind.FOOD, MaterialKind.POTION, MaterialKind.CONSUMABLE
+                MaterialKind.FOOD,
+                MaterialKind.POTION,
+                MaterialKind.CONSUMABLE,
             ],
         ).prefetch_related("material")
-    
-    async def showoff_profile_context(self, interaction: discord.Interaction, member: discord.Member) -> None:
+
+    async def showoff_profile_context(
+        self, interaction: discord.Interaction, member: discord.Member
+    ) -> None:
         """Allow others to summon a visable profile of a player, but only if they have one (onboarded)."""
-        log.debug(
-            "show-profile menu by user {} on {}", interaction.user.id, member.id
-        )
+        log.debug("show-profile menu by user {} on {}", interaction.user.id, member.id)
         if interaction.guild is None:
             return
         if self._patch_blocked():  # frozen blocks ALL commands
@@ -1718,12 +1753,15 @@ class LegionCog(commands.Cog):
         embed = render.profile_embed(
             target, legion, equipped, self.bot.color, effective_max=eff_max
         )
-        embed.set_author(name=strings.SHOWOFF_PROFILE_TITLE.format(
-            name=target.username),
-            icon_url=member.display_avatar.url
+        embed.set_author(
+            name=strings.SHOWOFF_PROFILE_TITLE.format(name=target.username),
+            icon_url=member.display_avatar.url,
         )
-        masteries = await WeaponMastery.filter(player=target).order_by("-level", "-exp").limit(2).prefetch_related(
-            "category"
+        masteries = (
+            await WeaponMastery.filter(player=target)
+            .order_by("-level", "-exp")
+            .limit(2)
+            .prefetch_related("category")
         )
         for mastery in masteries:
             if mastery.level >= MASTERY_HARD_CAP:
@@ -1739,9 +1777,11 @@ class LegionCog(commands.Cog):
                 inline=False,
             )
 
-        embed.set_footer(text=strings.SHOWOFF_PROFILE_FOOTER.format(
-            author=interaction.user.display_name
-        ))
+        embed.set_footer(
+            text=strings.SHOWOFF_PROFILE_FOOTER.format(
+                author=interaction.user.display_name
+            )
+        )
         await interaction.followup.send(embed=embed)  # public by design
 
     # --- /gatherer -----------------------------------------------------------------
@@ -1760,9 +1800,9 @@ class LegionCog(commands.Cog):
         if activity is not None:
             possible = [
                 y.material.name
-                for y in await SiteYield.filter(
-                    site=activity.site
-                ).prefetch_related("material")
+                for y in await SiteYield.filter(site=activity.site).prefetch_related(
+                    "material"
+                )
             ]
             busy_view = GatherBusyView(self, interaction.user.id, player)
             await self._edit_tracked(
@@ -1809,7 +1849,9 @@ class LegionCog(commands.Cog):
         sites = await self.activities.unlocked_sites(own_level)
         site = next((s for s in sites if s.id == site_id), None)
         if site is None:
-            await interaction.response.send_message(strings.GATHER_NO_SUCH_SITE, ephemeral=True)
+            await interaction.response.send_message(
+                strings.GATHER_NO_SUCH_SITE, ephemeral=True
+            )
             return
         activity = await self.activities.start(player, site)
         if activity is None:
@@ -1817,7 +1859,8 @@ class LegionCog(commands.Cog):
                 strings.GATHER_BLOCKED_SHORT, ephemeral=True
             )
             return
-        await self._edit_tracked(interaction, 
+        await self._edit_tracked(
+            interaction,
             content=strings.GATHER_STARTED.format(site=site.name),
             embed=None,
             view=None,
@@ -1858,13 +1901,12 @@ class LegionCog(commands.Cog):
             minutes=elapsed % 60,
         )
         if loot_parts:
-            result += strings.GATHER_RESULT.format(
-                loot=", ".join(loot_parts), pts=pts
-            )
+            result += strings.GATHER_RESULT.format(loot=", ".join(loot_parts), pts=pts)
         else:
             result += strings.GATHER_RESULT_EMPTY
 
-        await self._edit_tracked(interaction, 
+        await self._edit_tracked(
+            interaction,
             content=result,
             embed=None,
             view=None,
@@ -1872,7 +1914,9 @@ class LegionCog(commands.Cog):
 
     # --- /craft ---------------------------------------------------------------------
 
-    @app_commands.command(name=strings.CRAFTING_COMMAND_NAME, description=strings.CRAFTING_COMMAND_DESC)
+    @app_commands.command(
+        name=strings.CRAFTING_COMMAND_NAME, description=strings.CRAFTING_COMMAND_DESC
+    )
     @app_commands.guild_only()
     async def craft_command(self, interaction: discord.Interaction) -> None:
         log.debug("/make by user {}", interaction.user.id)
@@ -1882,9 +1926,7 @@ class LegionCog(commands.Cog):
             return
         await self.show_craft_home(interaction, player, edit=True)
 
-    async def _craft_groups(
-        self, player: Player
-    ) -> tuple[dict[str, list], dict]:
+    async def _craft_groups(self, player: Player) -> tuple[dict[str, list], dict]:
         """Enabled recipes grouped by workstation, marked unlocked-by-mastery,
         plus the player's life-skill levels."""
         levels = {
@@ -1895,9 +1937,7 @@ class LegionCog(commands.Cog):
             if recipe.skill is None:
                 groups["forge"].append((recipe, True))
             else:
-                unlocked = (
-                    levels.get(recipe.skill, 0) >= recipe.mastery_level_required
-                )
+                unlocked = levels.get(recipe.skill, 0) >= recipe.mastery_level_required
                 groups[recipe.skill.value].append((recipe, unlocked))
         return groups, levels
 
@@ -1908,9 +1948,7 @@ class LegionCog(commands.Cog):
         embed = render.craft_home_embed(groups, levels, self.bot.color)
         view = CraftHomeView(self, interaction.user.id, player)
         if edit:
-            await self._edit_tracked(interaction, 
-                content=None, embed=embed, view=view
-            )
+            await self._edit_tracked(interaction, content=None, embed=embed, view=view)
         else:
             await interaction.response.send_message(
                 embed=embed, view=view, ephemeral=True
@@ -1928,9 +1966,9 @@ class LegionCog(commands.Cog):
         # Forge select is filtered to recipes the player holds at least one of
         # the required materials for; the embed still lists them all.
         owned = set(
-            await PlayerMaterial.filter(
-                player=player, quantity__gt=0
-            ).values_list("material_id", flat=True)
+            await PlayerMaterial.filter(player=player, quantity__gt=0).values_list(
+                "material_id", flat=True
+            )
         )
         entries = []
         craftable = []
@@ -1938,17 +1976,25 @@ class LegionCog(commands.Cog):
             inputs = await RecipeMaterial.filter(recipe=recipe).prefetch_related(
                 "material"
             )
-            text = ", ".join(strings.CRAFT_MAT_DETAIL.format(name=i.material.name, count=i.quantity) for i in inputs)
+            text = ", ".join(
+                strings.CRAFT_MAT_DETAIL.format(name=i.material.name, count=i.quantity)
+                for i in inputs
+            )
             entries.append((recipe, unlocked, text))
             has_material = any(i.material_id in owned for i in inputs)
             if unlocked and (surface != "forge" or has_material):
                 craftable.append(recipe)
         embeds = render.craft_surface_embed(surface, entries, self.bot.color)
-        await self._edit_tracked(interaction,
+        await self._edit_tracked(
+            interaction,
             content=note,
             embed=embeds[0],
             view=CraftSurfaceView(
-                self, interaction.user.id, player, surface, craftable,
+                self,
+                interaction.user.id,
+                player,
+                surface,
+                craftable,
                 embeds=embeds,
             ),
         )
@@ -1969,9 +2015,7 @@ class LegionCog(commands.Cog):
     async def _recipe_mastery_ok(self, recipe: Recipe, player: Player) -> bool:
         if recipe.skill is None:
             return True
-        mastery = await LifeSkillMastery.get_or_none(
-            player=player, skill=recipe.skill
-        )
+        mastery = await LifeSkillMastery.get_or_none(player=player, skill=recipe.skill)
         return (mastery.level if mastery else 0) >= recipe.mastery_level_required
 
     async def show_recipe_detail(
@@ -1987,7 +2031,9 @@ class LegionCog(commands.Cog):
             "result_weapon__category", "result_material"
         )
         if recipe is None:
-            await interaction.response.send_message(strings.CRAFT_NO_SUCH_RECIPE, ephemeral=True)
+            await interaction.response.send_message(
+                strings.CRAFT_NO_SUCH_RECIPE, ephemeral=True
+            )
             return
         surface = recipe.skill.value if recipe.skill else "forge"
         inputs, affordable = await self._recipe_costs(recipe, player)
@@ -2016,9 +2062,12 @@ class LegionCog(commands.Cog):
             from maki.cogs.legion.constants import MUTATION_MAX, MUTATION_MIN
 
             embed = render.recipe_detail_embed(
-                recipe, inputs, self.bot.color,
+                recipe,
+                inputs,
+                self.bot.color,
                 weapon=recipe.result_weapon,
-                actives=actives, passives=passives,
+                actives=actives,
+                passives=passives,
                 weapon_mastery=mastery.level if mastery else 0,
                 mutation_range=(MUTATION_MIN, MUTATION_MAX),
             )
@@ -2043,7 +2092,9 @@ class LegionCog(commands.Cog):
             "result_weapon", "result_material"
         )
         if recipe is None:
-            await interaction.response.send_message(strings.CRAFT_NO_SUCH_RECIPE, ephemeral=True)
+            await interaction.response.send_message(
+                strings.CRAFT_NO_SUCH_RECIPE, ephemeral=True
+            )
             return
         item = (
             recipe.result_weapon.name
@@ -2106,9 +2157,7 @@ class LegionCog(commands.Cog):
             skill_ids = [
                 *(
                     a.active_skill_id
-                    for a in await WeaponActiveSkill.filter(
-                        weapon=recipe.result_weapon
-                    )
+                    for a in await WeaponActiveSkill.filter(weapon=recipe.result_weapon)
                 ),
                 *(
                     p.passive_skill_id
@@ -2125,13 +2174,16 @@ class LegionCog(commands.Cog):
             dots = strings.QUALITY_DOTS.get(pw.quality.value, 3)
         else:
             pw = None
-            item = recipe.result_material.name if recipe.result_material else recipe.name
+            item = (
+                recipe.result_material.name if recipe.result_material else recipe.name
+            )
             dots = 3
 
         # The show: crafting… with the quality-tell dot count.
         await self._edit_tracked(
             interaction,
-            content=strings.CRAFT_CRAFTING.format(item=item) + ".", view=None,
+            content=strings.CRAFT_CRAFTING.format(item=item) + ".",
+            view=None,
         )
         message = await interaction.original_response()
         for i in range(2, dots + 1):
@@ -2163,7 +2215,9 @@ class LegionCog(commands.Cog):
             await message.edit(
                 content=None,
                 embed=render.weapon_detail_embed(
-                    pw, actives, passives,
+                    pw,
+                    actives,
+                    passives,
                     mastery.level if mastery else 0,
                     self.bot.color,
                 ),
@@ -2245,14 +2299,14 @@ class LegionCog(commands.Cog):
     async def _resolve_item(item: str):
         """Look up a Material or Weapon by stable key, then by display name.
         Returns ``(material, weapon)`` with exactly one set, or ``(None, None)``."""
-        material = await Material.get_or_none(
-            key=item
-        ) or await Material.get_or_none(name=item)
+        material = await Material.get_or_none(key=item) or await Material.get_or_none(
+            name=item
+        )
         if material is not None:
             return material, None
-        weapon = await Weapon.get_or_none(
-            key=item
-        ) or await Weapon.get_or_none(name=item)
+        weapon = await Weapon.get_or_none(key=item) or await Weapon.get_or_none(
+            name=item
+        )
         return None, weapon
 
     # exposed field -> (model attribute, caster)
@@ -2422,7 +2476,9 @@ class LegionCog(commands.Cog):
                 return
             attr, caster = spec
             if value is None:
-                await ctx.send(f"🏰 {legion.name} · `{field}` = {getattr(legion, attr)}")
+                await ctx.send(
+                    f"🏰 {legion.name} · `{field}` = {getattr(legion, attr)}"
+                )
                 return
             try:
                 parsed = caster(value)
@@ -2444,7 +2500,9 @@ class LegionCog(commands.Cog):
         if spec is not None:
             attr, caster = spec
             if value is None:
-                await ctx.send(f"🧑 {player.username} · `{field}` = {getattr(player, attr)}")
+                await ctx.send(
+                    f"🧑 {player.username} · `{field}` = {getattr(player, attr)}"
+                )
                 return
             try:
                 parsed = caster(value)
@@ -2466,10 +2524,9 @@ class LegionCog(commands.Cog):
         """Read/set one of a player's masteries -- a weapon category (key or
         name) or a life skill (mine/garden/cook/brew). Sets the LEVEL (exp is
         zeroed); omit the value to read the current level."""
-        category = (
-            await WeaponCategory.get_or_none(key=field)
-            or await WeaponCategory.get_or_none(name=field)
-        )
+        category = await WeaponCategory.get_or_none(
+            key=field
+        ) or await WeaponCategory.get_or_none(name=field)
         life = next((t for t in LifeSkillType if t.value == field), None)
         if category is None and life is None:
             cats = [c.key for c in await WeaponCategory.all() if c.key]
@@ -2503,9 +2560,7 @@ class LegionCog(commands.Cog):
                 player=player, category=category, level=level, exp=0
             )
         else:
-            await LifeSkillMastery.create(
-                player=player, skill=life, level=level, exp=0
-            )
+            await LifeSkillMastery.create(player=player, skill=life, level=level, exp=0)
         await ctx.send(f"✅ {player.username}: {label} 精通 → {level}")
 
     @admin_group.command(name="freeze")
@@ -2555,8 +2610,12 @@ class LegionCog(commands.Cog):
         pending = await self.patches.pending()
         self._pending_patch = pending
         embed = render.patch_status_embed(
-            current, live_counts, PATCH["version"], content_hash(),
-            legion, self.bot.color,
+            current,
+            live_counts,
+            PATCH["version"],
+            content_hash(),
+            legion,
+            self.bot.color,
         )
         if pending is not None:
             embed.add_field(
@@ -2595,8 +2654,8 @@ class LegionCog(commands.Cog):
             return
         view.check.disabled = True
         view.view_update.disabled = False
-        await self._edit_tracked(interaction, 
-            content=strings.PATCH_UPDATE_FOUND, view=view
+        await self._edit_tracked(
+            interaction, content=strings.PATCH_UPDATE_FOUND, view=view
         )
 
     async def patch_show_compare(self, interaction: discord.Interaction) -> None:
@@ -2623,7 +2682,8 @@ class LegionCog(commands.Cog):
                 value="\n".join(lines)[:1000],
                 inline=False,
             )
-        await self._edit_tracked(interaction, 
+        await self._edit_tracked(
+            interaction,
             content=None,
             embed=embed,
             view=PatchDecisionView(self, interaction.user.id),
@@ -2632,8 +2692,12 @@ class LegionCog(commands.Cog):
     async def patch_schedule(self, interaction: discord.Interaction) -> None:
         lock_at, apply_at = patch_timeline(datetime.now().astimezone())
         pending = await self.patches.schedule(
-            content_hash(), PATCH["version"], PATCH.get("notes"),
-            content_summary(), lock_at, apply_at,
+            content_hash(),
+            PATCH["version"],
+            PATCH.get("notes"),
+            content_summary(),
+            lock_at,
+            apply_at,
         )
         if pending is None:
             await interaction.response.send_message(
@@ -2642,7 +2706,8 @@ class LegionCog(commands.Cog):
             return
         self._pending_patch = pending
         self._start_patch_timer(pending)
-        await self._edit_tracked(interaction, 
+        await self._edit_tracked(
+            interaction,
             content=strings.PATCH_SCHEDULED.format(
                 lock=int(lock_at.timestamp()), apply=int(apply_at.timestamp())
             ),
@@ -2650,9 +2715,7 @@ class LegionCog(commands.Cog):
             view=None,
         )
 
-    async def patch_cancel_scheduled(
-        self, interaction: discord.Interaction
-    ) -> None:
+    async def patch_cancel_scheduled(self, interaction: discord.Interaction) -> None:
         pending = await self.patches.pending()
         if pending is not None:
             await self.patches.cancel(pending)
@@ -2660,8 +2723,8 @@ class LegionCog(commands.Cog):
             self._patch_task.cancel()
             self._patch_task = None
         self._pending_patch = None
-        await self._edit_tracked(interaction, 
-            content=strings.PATCH_CANCELLED, embed=None, view=None
+        await self._edit_tracked(
+            interaction, content=strings.PATCH_CANCELLED, embed=None, view=None
         )
 
     async def patch_apply_now(self, interaction: discord.Interaction) -> None:
@@ -2689,15 +2752,15 @@ class LegionCog(commands.Cog):
         )
         log.info(
             "Applied patch {} ({}) — {} new rows.",
-            PATCH["version"], content_hash(), created,
+            PATCH["version"],
+            content_hash(),
+            created,
         )
         return created
 
     def _start_patch_timer(self, pending: GamePatch) -> None:
         async def timer() -> None:
-            delay = (
-                pending.apply_at - datetime.now().astimezone()
-            ).total_seconds()
+            delay = (pending.apply_at - datetime.now().astimezone()).total_seconds()
             if delay > 0:
                 await asyncio.sleep(delay)
             await apply_patch()
@@ -2708,4 +2771,3 @@ class LegionCog(commands.Cog):
         if self._patch_task is not None:
             self._patch_task.cancel()
         self._patch_task = asyncio.create_task(timer())
-

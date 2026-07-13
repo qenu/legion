@@ -64,17 +64,17 @@ PATCH: dict = {
         {"key": "raspberry", "name": "樹莓", "rarity": 2,
             "description": "酸甜的樹莓，吃起來非常爽口。"},
         {"key": "red_potion", "name": "紅色藥水", "kind": "potion", "rarity": 2,
-         "stat_bonus_type": "hp", "stat_bonus_value": 30, 
-         "description": "紅色的藥水，能快速回復少量生命。"},
+            "stat_bonus_type": "hp", "stat_bonus_value": 30, 
+            "description": "紅色的藥水，能快速回復少量生命。"},
         {"key": "poison_gland", "name": "毒腺", "rarity": 3,
-         "description": "分泌毒液的腺體，能用來製作。"},
+            "description": "分泌毒液的腺體，能用來製作。"},
         {"key": "silver_ore", "name": "銀礦石", "rarity": 3,
-         "description": "閃閃發光的銀礦石，可以用來製作武器和裝備。"},
+            "description": "閃閃發光的銀礦石，可以用來製作武器和裝備。"},
         {"key": "moss_patch", "name": "苔蘚", "rarity": 1,
-         "description": "柔軟的苔蘚，可以用來製作一些東西。"},
+            "description": "柔軟的苔蘚，可以用來製作一些東西。"},
         {"key": "green_potion", "name": "綠色藥水", "kind": "potion", "rarity": 2,
-         "stat_bonus_type": "hp", "stat_bonus_value": 30, 
-         "description": "綠色的藥水，能快速回復少量生命。"},
+            "stat_bonus_type": "hp", "stat_bonus_value": 30, 
+            "description": "綠色的藥水，能快速回復少量生命。"},
     ],
     "categories": [
         {"key": "sword", "name": "刀劍", "bonus_stat": [
@@ -242,6 +242,9 @@ PATCH: dict = {
             "passives": [{"skill": "fleetfoot", "tier": 2, "req": 4},
                         {"skill": "focus", "tier": 2, "req": 4},
                         {"skill": "haste", "tier": 1, "req": 5}],
+        },
+        {
+            "key": 
         },
     ],
     "mobs": [
