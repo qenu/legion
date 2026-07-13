@@ -385,7 +385,7 @@ SKILL_PASSIVE_DESCRIPTION = {
     "regen": "每分鐘恢復 {value:,} 點生命值",
 }
 SKILL_TIER_TAG = "T{tier}"
-SKILL_LOCKED_TAG = "{LOCK_EMOJI} 需要{category}精通 Lv{req} 解鎖"
+SKILL_LOCKED_TAG = "<:lock:1526099265636667543> 需要{category}精通 Lv{req} 解鎖"
 
 # --- craft detail / confirm flow ---
 CRAFT_ACTION = "製作"

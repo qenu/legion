@@ -1371,6 +1371,17 @@ PATCH: dict = {
                 {"material": "iron_ore", "qty": 5},
             ],
         },
+        {
+            "key": "forge_dark_golem_shield",
+            "name": "黑石像盾",
+            "weapon": "dark_golem_shield",
+            "inputs": [
+                {"material": "dark_golem_core", "qty": 3},
+                {"material": "golem_core", "qty": 5},
+                {"material": "rough_stone", "qty": 10},
+                {"material": "iron_ore", "qty": 5},
+            ],
+        },
     ],
     "upgrade_costs": [
         {"level": 2, "material": "slime_goo", "base_qty": 5},
