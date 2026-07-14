@@ -25,6 +25,8 @@ from maki.cogs.legion.model.model import (
     Weapon,
     WeaponCategory,
     WeaponMastery,
+    WeaponActiveSkill,
+    WeaponPassiveSkill,
 )
 from maki.cogs.legion.constants import LifeSkillType
 from maki.cogs.legion.seeds import (
@@ -191,10 +193,21 @@ class AdminMixin(LegionCogBase):
             await self.inventory.add_material(player, material, qty)
             await ctx.send(f"✅ {player.username} +{material.name}×{qty}")
         elif weapon is not None:
-            for _ in range(min(qty, 10)):
-                await self.inventory.grant_weapon(player, weapon)
+            # for _ in range(min(qty, 10)):
+            #     await self.inventory.grant_weapon(player, weapon)
+            # await ctx.send(
+            #     f"✅ {player.username} +{min(qty, 10)}× {weapon.name} (flat)"
+            # )
+            pseudo_legion_level = qty
+            skill_ids = [
+                *(a.active_skill_id for a in await WeaponActiveSkill.filter(weapon=weapon)),
+                *(p.passive_skill_id for p in await WeaponPassiveSkill.filter(weapon=weapon)),
+            ]
+            mutations = await self.inventory.roll_mutations(skill_ids, pseudo_legion_level)
+            pw = await self.inventory.grant_weapon(player, weapon, mutations)
+            quality = strings.WEAPON_QUALITY_DISPLAY.get(pw.quality, pw.quality.value)
             await ctx.send(
-                f"✅ {player.username} +{min(qty, 10)}× {weapon.name} (flat)"
+                f"✅ {player.username} +{weapon.name}({quality}) with {len(mutations)} mutations"
             )
         else:
             await ctx.send(f"❌ No material or weapon named `{item}`.")

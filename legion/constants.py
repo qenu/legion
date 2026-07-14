@@ -157,11 +157,11 @@ GATHER_MASTERY_MAX_PER_AFK = 24  # pts cap per session (= 24 counted hours)
 
 # Craft mutation: each skill on a forged weapon rolls its own effectiveness %.
 # The item's quality tier is derived from the AVERAGE of its mutations.
-# Legion level shifts the roll mean up (+0.5%/level, capped +10).
-MUTATION_MIN = 75
-MUTATION_MAX = 125
+# Legion level shifts the roll mean up (+0.5%/level, capped +40).
+MUTATION_MIN = 60
+MUTATION_MAX = 150
 MUTATION_LEGION_SHIFT = 0.5
-MUTATION_LEGION_SHIFT_CAP = 10
+MUTATION_LEGION_SHIFT_CAP = 40
 
 # Dismantle salvage: from the weapon's flattened crafting cost (1a + 2b ->
 # [a, b, b]), each success returns ONE random mat, then re-rolls -- so the
@@ -169,6 +169,9 @@ MUTATION_LEGION_SHIFT_CAP = 10
 # draws without replacement, so returns never exceed the original cost.
 DISMANTLE_RETURN_PERC = 30
 QUALITY_TIER_THRESHOLDS = (  # (min average, tier value) checked in order
+    (210, "mythic"),
+    (180, "legendary"),
+    (150, "unique"),
     (110, "masterwork"),
     (103, "fine"),
     (97, "standard"),
@@ -180,7 +183,7 @@ QUALITY_TIER_THRESHOLDS = (  # (min average, tier value) checked in order
 LEGION_UPGRADE_QTY_PER_MEMBER = 1.0  # actual qty = base_qty * members * this
 # Upgrade cost scales by ACTIVE members only: those seen within this window
 # (plus never-stamped legacy rows, grandfathered in until they next act).
-ACTIVE_WINDOW_DAYS = 7
+ACTIVE_WINDOW_DAYS = 4
 # Throttle the last_active_at write so it isn't a DB round-trip every command;
 # a stamp fresh to the hour is plenty for a 7-day window.
 ACTIVE_TOUCH_THROTTLE_MINUTES = 60

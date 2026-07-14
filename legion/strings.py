@@ -331,6 +331,9 @@ WEAPON_QUALITY_NAMES = {
     "standard": "",
     "fine": "精良的",
     "masterwork": "非凡的",
+    "unique": "獨特的",
+    "legendary": "傳說的",
+    "mythic": "神話的",
 }
 WEAPON_HAND_NAMES = {"main": INVENTORY_MAIN, "sub": INVENTORY_SUB}
 CRAFT_DESC = {
