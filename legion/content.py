@@ -9,8 +9,8 @@ apply (rows are never hard-deleted; the /patch review shows removals).
 """
 
 PATCH: dict = {
-    "version": "0.2.4",
-    "notes": "This is gonna be so much fun",
+    "version": "0.2.5",
+    "notes": "Legion 4 requirement reduce",
     "materials": [
         {
             "key": "iron_ore",
@@ -1396,7 +1396,7 @@ PATCH: dict = {
         {"level": 3, "material": "rabbit_foot", "base_qty": 3},
         {"level": 4, "material": "thick_bark", "base_qty": 5},
         {"level": 4, "material": "flame_lizard_core", "base_qty": 4},
-        {"level": 4, "material": "golem_core", "base_qty": 10},
+        {"level": 4, "material": "golem_core", "base_qty": 6},
         {"level": 5, "material": "dark_golem_core", "base_qty": 5},
         {"level": 5, "material": "poison_gland", "base_qty": 6},
         {"level": 5, "material": "cobweb", "base_qty": 20},
