@@ -36,6 +36,7 @@ from maki.cogs.legion.seeds import (
     pending_removals,
     validate_patch,
 )
+from maki.cogs.legion.calculator import roll_mutations
 from maki.cogs.legion.utils import clean_legion_name, clean_player_name, patch_timeline
 from maki.cogs.legion.views import PatchDecisionView, PatchView
 
@@ -203,7 +204,7 @@ class AdminMixin(LegionCogBase):
                 *(a.active_skill_id for a in await WeaponActiveSkill.filter(weapon=weapon)),
                 *(p.passive_skill_id for p in await WeaponPassiveSkill.filter(weapon=weapon)),
             ]
-            mutations = await self.inventory.roll_mutations(skill_ids, pseudo_legion_level)
+            mutations = await roll_mutations(skill_ids, pseudo_legion_level)
             pw = await self.inventory.grant_weapon(player, weapon, mutations)
             quality = strings.WEAPON_QUALITY_DISPLAY.get(pw.quality, pw.quality.value)
             await ctx.send(
