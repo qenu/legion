@@ -416,6 +416,9 @@ WEAPON_QUALITY_DISPLAY = {
     "standard": "普通",
     "fine": "精良",
     "masterwork": "非凡",
+    "unique": "獨特",
+    "legendary": "傳說",
+    "mythic": "神話",
 }
 
 
