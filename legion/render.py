@@ -664,10 +664,8 @@ def recipe_detail_embed(
         if weapon.description:
             desc_parts.append(weapon.description)
     elif material is not None:
-        if material.stat_bonus_value:
-            desc_parts.append(
-                strings.INVENTORY_HEAL_EFFECT.format(value=material.stat_bonus_value)
-            )
+        # Kind-aware effect text (a speed food must not read as a heal).
+        desc_parts.extend(material_effect_lines(material))
         desc_parts.append(strings.CRAFT_RESULT_QTY.format(qty=recipe.result_qty))
         if material.description:
             desc_parts.append(material.description)
@@ -816,6 +814,37 @@ def weapon_detail_embed(
     return embed
 
 
+def material_effect_lines(material: Material) -> list[str]:
+    """Effect text for a consumable material, honoring its kind and stat:
+    FOOD -> regen buff or timed combat-stat buff (with duration); POTION /
+    legacy consumable -> instant heal (+ the revive tag for potions). Empty
+    for plain crafting mats. THE one place this logic lives -- inventory and
+    recipe details must never drift apart again."""
+    if not material.stat_bonus_value:
+        return []
+    kind = material.kind.value
+    stype = material.stat_bonus_type.value if material.stat_bonus_type else "hp"
+    if kind == "food":
+        if stype in ("regen", "hp"):
+            return [
+                strings.INVENTORY_REGEN_EFFECT.format(
+                    value=material.stat_bonus_value,
+                    duration=material.duration or 0,
+                )
+            ]
+        return [  # timed combat-stat buff
+            strings.FOOD_BUFF_EFFECT.format(
+                value=material.stat_bonus_value,
+                category=strings.STAT_NAMES.get(stype, stype),
+                duration=material.duration or 0,
+            )
+        ]
+    lines = [strings.INVENTORY_HEAL_EFFECT.format(value=material.stat_bonus_value)]
+    if kind == "potion":
+        lines.append(strings.POTION_REVIVE_TAG)
+    return lines
+
+
 def inventory_consumables_embed(
     stacks: list[PlayerMaterial], color: discord.Colour
 ) -> discord.Embed:
@@ -825,31 +854,7 @@ def inventory_consumables_embed(
         color=color,
     )
     for s in stacks[:25]:
-        details = []
-        kind = s.material.kind.value
-        stype = s.material.stat_bonus_type.value if s.material.stat_bonus_type else "hp"
-        if kind == "food" and s.material.stat_bonus_value:
-            if stype in ("regen", "hp"):
-                details.append(
-                    strings.INVENTORY_REGEN_EFFECT.format(
-                        value=s.material.stat_bonus_value,
-                        duration=s.material.duration or 0,
-                    )
-                )
-            else:  # timed combat-stat buff
-                details.append(
-                    strings.FOOD_BUFF_EFFECT.format(
-                        value=s.material.stat_bonus_value,
-                        category=strings.STAT_NAMES.get(stype, stype),
-                        duration=s.material.duration or 0,
-                    )
-                )
-        elif s.material.stat_bonus_value:
-            details.append(
-                strings.INVENTORY_HEAL_EFFECT.format(value=s.material.stat_bonus_value)
-            )
-            if kind == "potion":
-                details.append(strings.POTION_REVIVE_TAG)
+        details = material_effect_lines(s.material)
         if s.material.description:
             details.append(s.material.description)
         embed.add_field(

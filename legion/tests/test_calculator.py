@@ -29,6 +29,8 @@ from maki.cogs.legion.constants import (
     MASTERY_EXP_BASE,
     MASTERY_HARD_CAP,
     MASTERY_SOFT_CAP,
+    MUTATION_MAX,
+    MUTATION_MIN,
     WeaponQuality,
 )
 
@@ -183,7 +185,7 @@ def test_roll_mutations_range_and_keys():
     rng = random.Random(42)
     muts = roll_mutations([7, 8], legion_level=0, rng=rng)
     assert set(muts) == {"7", "8"}  # stringified for JSON round-trips
-    assert all(75 <= v <= 125 for v in muts.values())
+    assert all(MUTATION_MIN <= v <= MUTATION_MAX for v in muts.values())
 
 
 def test_tier_multiplier_clamps():
