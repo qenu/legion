@@ -204,7 +204,7 @@ class AdminMixin(LegionCogBase):
                 *(a.active_skill_id for a in await WeaponActiveSkill.filter(weapon=weapon)),
                 *(p.passive_skill_id for p in await WeaponPassiveSkill.filter(weapon=weapon)),
             ]
-            mutations = await roll_mutations(skill_ids, pseudo_legion_level)
+            mutations = roll_mutations(skill_ids, pseudo_legion_level)
             pw = await self.inventory.grant_weapon(player, weapon, mutations)
             quality = strings.WEAPON_QUALITY_DISPLAY.get(pw.quality, pw.quality.value)
             await ctx.send(
