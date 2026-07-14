@@ -328,3 +328,5 @@ class WeaponQuality(StrEnum):
     STANDARD = "standard"
     FINE = "fine"
     MASTERWORK = "masterwork"
+    UNIQUE = "unique"
+    LEGENDARY = "legendary"
