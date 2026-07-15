@@ -9,8 +9,8 @@ apply (rows are never hard-deleted; the /patch review shows removals).
 """
 
 PATCH: dict = {
-    "version": "0.2.5",
-    "notes": "Legion 4 requirement reduce",
+    "version": "0.2.6",
+    "notes": "spiderlings shouldnt have fangs ",
     "materials": [
         {
             "key": "iron_ore",
@@ -978,7 +978,7 @@ PATCH: dict = {
             "passives": [],
             "drops": [
                 {"material": "cobweb", "weight": 2, "min": 1, "max": 2},
-                {"material": "spider_fang", "weight": 1, "min": 1, "max": 1},
+                {"material": "moss_patch", "weight": 1, "min": 1, "max": 1},
             ],
         },
         {
