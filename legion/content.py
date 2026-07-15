@@ -1210,11 +1210,15 @@ PATCH: dict = {
             "key": "black_spider",
             "name": "黑蜘蛛",
             "tier": 4,
-            "rounds_limit": 6,
+            # Balance note: T4/T5 speeds stay <= 12 -- fast mobs both act
+            # more AND burn the doom clock faster (rounds = leader actions),
+            # which is why the original 15-20 made the depths unwinnable.
+            # Difficulty lives in atk/hp; bosses get longer rounds instead.
+            "rounds_limit": 9,
             "hp": 200,
             "atk": 30,
             "def": 10,
-            "speed": 15,
+            "speed": 10,
             "skills": [
                 {"skill": "poison_bite", "cooldown": 1, "hp_threshold": 1.0},
                 {"skill": "quick_strike", "cooldown": 0, "hp_threshold": 1.0},
@@ -1231,11 +1235,11 @@ PATCH: dict = {
             "key": "red_spider",
             "name": "紅蜘蛛",
             "tier": 4,
-            "rounds_limit": 6,
+            "rounds_limit": 9,
             "hp": 180,
             "atk": 35,
             "def": 8,
-            "speed": 18,
+            "speed": 11,
             "skills": [
                 {"skill": "poison_throw", "cooldown": 2, "hp_threshold": 1.0},
                 {"skill": "poison_arrow", "cooldown": 1, "hp_threshold": 1.0}
@@ -1252,11 +1256,11 @@ PATCH: dict = {
             "key": "grim_spider",
             "name": "恐懼蜘蛛",
             "tier": 4,
-            "rounds_limit": 6,
+            "rounds_limit": 9,
             "hp": 250,
             "atk": 40,
             "def": 12,
-            "speed": 20,
+            "speed": 12,
             "skills": [
                 {"skill": "poison_bite", "cooldown": 1, "hp_threshold": 1.0},
                 {"skill": "poison_throw", "cooldown": 0, "hp_threshold": 1.0},
@@ -1280,14 +1284,17 @@ PATCH: dict = {
             "key": "guardian_spider",
             "name": "守護蜘蛛",
             "tier": 5,
-            "rounds_limit": 6,
+            "rounds_limit": 9,
             "hp": 300,
             "atk": 45,
             "def": 15,
-            "speed": 10,
+            "speed": 8,
             "skills": [
                 {"skill": "poison_throw", "cooldown": 1, "hp_threshold": 1.0},
-                {"skill": "perserverance", "cooldown": 0, "hp_threshold": 0.5},
+                # cd0 was an INFINITE wall: ~10% max HP re-shielded every
+                # turn out-dps'd even a best-in-slot 4-man (0% win). cd3
+                # makes it a burst window to punish, not a stalemate.
+                {"skill": "perserverance", "cooldown": 3, "hp_threshold": 0.5},
             ],
             "passives": [
                 {
