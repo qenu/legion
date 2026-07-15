@@ -557,6 +557,12 @@ PATCH: dict = {
             "stat_bonus_type": "poison_res",
             "stat_bonus_value": 5,
         },
+        {
+            "key": "flame_weakness",
+            "name": "火焰弱點",
+            "stat_bonus_type": "flame_res",
+            "stat_bonus_value": -5
+        },
     ],
     "weapons": [
         {
@@ -995,6 +1001,9 @@ PATCH: dict = {
                     "skill": "thick_hide",
                     "requirement_type": "hp_below",
                     "requirement_value": 0.8,
+                },
+                {
+                    "skill": "flame_weakness",
                 }
             ],
             "drops": [
@@ -1023,10 +1032,8 @@ PATCH: dict = {
                     "requirement_value": 0.8,
                 },
                 {
-                    "skill": "provoke",
-                    "requirement_type": "hp_below",
-                    "requirement_value": 0.5,
-                },
+                    "skill": "flame_weakness",
+                }
             ],
             "drops": [
                 {"material": "dark_golem_core", "weight": 1, "min": 1, "max": 1},
@@ -1281,7 +1288,10 @@ PATCH: dict = {
                     "requirement_type": "hp_below",
                     "requirement_value": 0.9,
                 },
-                {"skill": "poison_mastery"}
+                {"skill": "poison_mastery"},
+                {
+                    "skill": "flame_weakness",
+                }
             ],
             "drops": [
                 {"material": "cobweb", "weight": 3, "min": 1, "max": 3},
