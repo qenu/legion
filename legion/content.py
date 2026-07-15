@@ -1083,7 +1083,7 @@ PATCH: dict = {
                     "requirement_value": 0.5,
                 },
                 {
-                    "key": "poison_mastery",
+                    "skill": "poison_mastery",
                 }
             ],
             "drops": [
@@ -1111,7 +1111,7 @@ PATCH: dict = {
                     "requirement_value": 0.5,
                 },
                 {
-                    "key": "poison_mastery",
+                    "skill": "poison_mastery",
                 }
             ],
             "drops": [
@@ -1140,7 +1140,7 @@ PATCH: dict = {
                     "requirement_value": 0.5,
                 },
                 {
-                    "key": "poison_mastery",
+                    "skill": "poison_mastery",
                 }
             ],
             "drops": [
