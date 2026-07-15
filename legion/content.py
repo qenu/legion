@@ -275,7 +275,11 @@ PATCH: dict = {
     #   name         (required) display text, patches freely
     #   description  optional flavor text
     #   effect_type  (required) one of:
-    #     damage  -- hits the target (def applies)
+    #     damage       -- hits the target (def applies)
+    #     fire_damage  -- damage, first reduced by the target's fire_res
+    #     cold_damage  -- damage, first reduced by the target's cold_res
+    #                     (negative res = weakness = extra damage; def
+    #                      applies after the resistance)
     #     heal    -- restores the lowest-HP-ratio ALLY
     #     shield  -- self-shield, absorbs all damage before HP; re-cast
     #                refreshes (max), never stacks
@@ -463,12 +467,15 @@ PATCH: dict = {
     #     hp / atk / def / speed  -- flat combat-stat bonus
     #     taunt   -- aggro pull (mob targeting weight; not a combat stat)
     #     regen   -- HP per minute, out-of-combat only
-    #     bleed_res / poison_res / burn_res / freeze_res
-    #             -- flat reduction on EVERY proc of that DoT flavor
-    #                (tick and bonus alike, floor 0). NEGATIVE values are
-    #                WEAKNESSES: burn_res "-5" = every burn proc hits 5
+    #     bleed_res / poison_res / fire_res / cold_res
+    #             -- flat reduction, floor 0, on the whole ELEMENT:
+    #                bleed_res/poison_res hit every proc of that DoT
+    #                (tick and bonus alike); fire_res also reduces
+    #                fire_damage hits and burn DoTs; cold_res likewise
+    #                covers cold_damage and freeze DoTs (the freeze
+    #                turn-skip stays). NEGATIVE values are WEAKNESSES:
+    #                fire_res "-5" = every fire hit / burn proc lands 5
     #                harder -- the elemental counter-pick lever for mobs.
-    #                freeze_res only reduces the DoT; the turn-skip stays.
     #   stat_bonus_value (required) number or formula string, evaluated
     #                against BASE stats (before any passive applies) --
     #                {player.*} allowed, {target.*} is NOT (no target;
@@ -560,7 +567,7 @@ PATCH: dict = {
         {
             "key": "flame_weakness",
             "name": "火焰弱點",
-            "stat_bonus_type": "burn_res",
+            "stat_bonus_type": "fire_res",
             "stat_bonus_value": -5
         },
     ],

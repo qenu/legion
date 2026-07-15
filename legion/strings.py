@@ -259,8 +259,8 @@ STAT_NAMES = {
     "regen": "生命回復",
     "bleed_res": "流血抗性",
     "poison_res": "中毒抗性",
-    "burn_res": "燃燒抗性",
-    "freeze_res": "冰凍抗性",
+    "fire_res": "火焰抗性",
+    "cold_res": "寒冷抗性",
 }
 DEATH_TIMER_TITLE = "死亡回歸"
 DEATH_TIMER_VALUE = "<t:{revive}:R> 復活"
@@ -384,6 +384,8 @@ SKILL_PASSIVE_SKILL = "被動技能"
 SKILL_COOLDOWN_DESCRIPTION = "冷卻時間 {value:,} 回合。"
 SKILL_ACTIVE_DESCRIPTION = {
     "damage": "對目標造成 {value:,} 點傷害，",
+    "fire_damage": "對目標造成 {value:,} 點火焰傷害 (受火焰抗性影響)，",
+    "cold_damage": "對目標造成 {value:,} 點寒冷傷害 (受寒冷抗性影響)，",
     "heal": "對目標恢復 {value:,} 點生命值，",
     "stun": "對目標造成眩暈，持續 {value:,} 回合，",
     "bleed": "對目標造成流血，每回合造成 {value:,} 點傷害，",
@@ -400,10 +402,11 @@ SKILL_PASSIVE_DESCRIPTION = {
     "taunt": "嘲諷 +{value:,}",
     "regen": "每分鐘恢復 {value:,} 點生命值",
     # {value:+,} keeps the sign honest: +3 = 抗性, -5 = 弱點 (額外受傷).
+    # fire_res covers 燃燒 DoT + 火焰傷害; cold_res covers 冰凍 DoT + 寒冷傷害.
     "bleed_res": "流血抗性 {value:+,}",
     "poison_res": "中毒抗性 {value:+,}",
-    "burn_res": "燃燒抗性 {value:+,}",
-    "freeze_res": "冰凍抗性 {value:+,}",
+    "fire_res": "火焰抗性 {value:+,}",
+    "cold_res": "寒冷抗性 {value:+,}",
 }
 SKILL_TIER_TAG = "T{tier}"
 SKILL_LOCKED_TAG = "<:lock:1526099265636667543> 需要{category}精通 Lv{req} 解鎖"

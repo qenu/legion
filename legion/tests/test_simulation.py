@@ -172,7 +172,7 @@ def test_shield_skill_grants_and_refreshes_without_stacking():
 def test_dot_resistance_reduces_every_proc():
     # bleed 5/round vs bleed_res 3 -> 2 per tick.
     player = make_player(hp=100, atk=1, speed=1)
-    player.dot_res = {"bleed": 3}
+    player.resists = {"bleed": 3}
     player.dots.append(DoT(dmg_per_round=5, rounds_left=3, source=player))
     mob = make_mob(hp=10**6, atk=0, def_=10**6, speed=100, rounds_limit=3)
     result = run_simulation([player], [mob], rng=random.Random(1))
@@ -182,7 +182,7 @@ def test_dot_resistance_reduces_every_proc():
 
 def test_dot_full_resist_silences_the_proc():
     player = make_player(hp=100, atk=1, speed=1)
-    player.dot_res = {"bleed": 99}
+    player.resists = {"bleed": 99}
     player.dots.append(DoT(dmg_per_round=5, rounds_left=3, source=player))
     mob = make_mob(hp=10**6, atk=0, def_=10**6, speed=100, rounds_limit=3)
     result = run_simulation([player], [mob], rng=random.Random(1))
@@ -191,10 +191,10 @@ def test_dot_full_resist_silences_the_proc():
 
 
 def test_negative_resistance_is_a_weakness():
-    # burn_res -5 on the victim: every burn proc hits 5 harder -- the
+    # fire_res -5 on the victim: every burn proc hits 5 harder -- the
     # elemental counter-pick lever. A bonus proc that didn't roll stays 0.
     mob = make_mob(hp=1000, atk=0, def_=0, speed=100, rounds_limit=3)
-    mob.dot_res = {"burn": -5}
+    mob.resists = {"fire": -5}  # burn DoTs check FIRE res
     player = make_player(hp=100, atk=1, speed=1)
     mob.dots.append(
         DoT(dmg_per_round=10, rounds_left=3, source=player, label="burn")
@@ -207,6 +207,38 @@ def test_negative_resistance_is_a_weakness():
     for e in result.events:
         if e.kind == "burn_effect":
             assert e.value == 15
+
+
+def test_fire_damage_checks_fire_res_then_def():
+    # 30 fire vs fire_res 10 and def 5 -> (30-10)-5 = 15 per hit.
+    skill = loaded(20, EffectType.FIRE_DAMAGE, "30", cooldown=0)
+    player = make_player(atk=1, skills=[skill])
+    mob = make_mob(hp=10**6, atk=0, def_=5, speed=0, rounds_limit=10**6)
+    mob.resists = {"fire": 10}
+    result = run_simulation([player], [mob], rng=random.Random(1))
+    hits = [e for e in result.events if e.kind == "skill"]
+    assert hits and all(e.value == 15 for e in hits)
+
+
+def test_cold_damage_weakness_amplifies():
+    # 20 cold vs cold_res -5 and def 0 -> 25 per hit.
+    skill = loaded(21, EffectType.COLD_DAMAGE, "20", cooldown=0)
+    player = make_player(atk=1, skills=[skill])
+    mob = make_mob(hp=10**6, atk=0, def_=0, speed=0, rounds_limit=10**6)
+    mob.resists = {"cold": -5}
+    result = run_simulation([player], [mob], rng=random.Random(1))
+    hits = [e for e in result.events if e.kind == "skill"]
+    assert hits and all(e.value == 25 for e in hits)
+
+
+def test_plain_damage_ignores_elemental_res():
+    skill = loaded(22, EffectType.DAMAGE, "30", cooldown=0)
+    player = make_player(atk=1, skills=[skill])
+    mob = make_mob(hp=10**6, atk=0, def_=0, speed=0, rounds_limit=10**6)
+    mob.resists = {"fire": 99, "cold": 99}
+    result = run_simulation([player], [mob], rng=random.Random(1))
+    hits = [e for e in result.events if e.kind == "skill"]
+    assert hits and all(e.value == 30 for e in hits)
 
 
 def test_pack_won_only_when_every_mob_dies():

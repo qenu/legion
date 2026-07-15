@@ -26,8 +26,10 @@ from maki.cogs.legion.constants import (
     ATB_THRESHOLD,
     BLEED_DURATION,
     ContentStatus,
+    DAMAGE_RESIST_KEYS,
     DEATH_HP,
-    DOT_RESIST_LABELS,
+    DOT_RESIST_KEYS,
+    RESIST_KEYS,
     POISON_DURATION,
     POISON_PCT_MAX_HP,
     BURN_DURATION,
@@ -127,9 +129,10 @@ class Combatant:
     # Absorbs ALL damage (hits and DoTs) before HP. Combat-only: granted by
     # SHIELD skills, never persisted. Re-casting REFRESHES (max), no stacking.
     shield: int = 0
-    # Flat per-proc DoT reduction, keyed by flavor ("poison": 3 = every
-    # poison proc deals 3 less, floor 0). From *_RES passives.
-    dot_res: dict[str, int] = field(default_factory=dict)
+    # Flat elemental/DoT reduction, keyed by RESIST_KEYS values ("fire": 3 =
+    # every burn proc AND fire_damage hit deals 3 less, floor 0). Negative =
+    # weakness. From *_RES passives.
+    resists: dict[str, int] = field(default_factory=dict)
     dots: list[DoT] = field(default_factory=list)
 
     damage_dealt: int = 0
@@ -229,7 +232,7 @@ async def build_player_state(player: Player, legion_level: int = 0) -> PlayerSta
     )
     taunt = PLAYER_BASE_TAUNT
     regen_bonus = 0  # summed from equipped REGEN passives; read out-of-combat
-    dot_res: dict[str, int] = {}  # flavor -> flat per-proc reduction
+    resists: dict[str, int] = {}  # flavor -> flat per-proc reduction
     # Passive formulas evaluate against BASE stats (before any passive
     # applies) -- no ordering dependence, no self-compounding. Passives have
     # no target, so only the {player.*} namespace is exposed.
@@ -312,9 +315,9 @@ async def build_player_state(player: Player, legion_level: int = 0) -> PlayerSta
                 taunt += value
             elif bonus.stat_bonus_type == StatBonusType.REGEN:
                 regen_bonus += value
-            elif bonus.stat_bonus_type in DOT_RESIST_LABELS:
-                label = DOT_RESIST_LABELS[bonus.stat_bonus_type]
-                dot_res[label] = dot_res.get(label, 0) + value
+            elif bonus.stat_bonus_type in RESIST_KEYS:
+                label = RESIST_KEYS[bonus.stat_bonus_type]
+                resists[label] = resists.get(label, 0) + value
 
     # Weapon-category mastery bonuses: applied ONCE per equipped category (a
     # dual-wield of the same type doesn't double them), for every unlock at or
@@ -334,9 +337,9 @@ async def build_player_state(player: Player, legion_level: int = 0) -> PlayerSta
                 speed += val
             elif stype == StatBonusType.TAUNT:
                 taunt += val
-            elif stype in DOT_RESIST_LABELS:  # StrEnum hashes as its value
-                label = DOT_RESIST_LABELS[StatBonusType(stype)]
-                dot_res[label] = dot_res.get(label, 0) + val
+            elif stype in RESIST_KEYS:  # StrEnum hashes as its value
+                label = RESIST_KEYS[StatBonusType(stype)]
+                resists[label] = resists.get(label, 0) + val
 
     # Timed food stat-buffs (atk/def/speed/taunt) still within their window.
     now_epoch = time.time()
@@ -364,7 +367,7 @@ async def build_player_state(player: Player, legion_level: int = 0) -> PlayerSta
         skills=skills,
         player=player,
         regen_bonus=regen_bonus,
-        dot_res=dot_res,
+        resists=resists,
     )
 
 
@@ -471,9 +474,9 @@ def _apply_mob_passive(state: MobState, passive: MobPassive) -> None:
         state.speed += value
     elif bonus.stat_bonus_type == StatBonusType.TAUNT:
         state.taunt += value
-    elif bonus.stat_bonus_type in DOT_RESIST_LABELS:
-        label = DOT_RESIST_LABELS[bonus.stat_bonus_type]
-        state.dot_res[label] = state.dot_res.get(label, 0) + value
+    elif bonus.stat_bonus_type in RESIST_KEYS:
+        label = RESIST_KEYS[bonus.stat_bonus_type]
+        state.resists[label] = state.resists.get(label, 0) + value
 
 
 def _combatant_stats(c: Combatant) -> CombatantStats:
@@ -615,7 +618,17 @@ def _use_skill(
     # (write "{atk} + 12" for the old base-attack behavior). The ENEMY is
     # what "{target.*}" refers to -- even for heals, which land on an ally.
     value = _skill_value(loaded, actor, enemy)
-    if skill.effect_type == EffectType.DAMAGE:
+    if skill.effect_type in (
+        EffectType.DAMAGE,
+        EffectType.FIRE_DAMAGE,
+        EffectType.COLD_DAMAGE,
+    ):
+        # Elemental damage is plain damage that first checks the TARGET'S
+        # matching resistance (flat, floor 0; negative res = weakness =
+        # extra damage), then def applies as usual.
+        element = DAMAGE_RESIST_KEYS.get(skill.effect_type)
+        if element is not None:
+            value = max(0, value - enemy.resists.get(element, 0))
         _deal_damage(
             actor,
             enemy,
@@ -872,9 +885,10 @@ def _apply_dots(
     for dot in combatant.dots:
         if not combatant.alive:
             break
-        # Every proc is reduced by the victim's flavor resistance (flat,
-        # floor 0 -- a fully-resisted proc doesn't even log).
-        res = combatant.dot_res.get(dot.label, 0)
+        # Every proc is reduced by the victim's matching resistance (flat,
+        # floor 0 -- a fully-resisted proc doesn't even log). Burn DoTs are
+        # reduced by FIRE res, freeze DoTs by COLD res.
+        res = combatant.resists.get(DOT_RESIST_KEYS.get(dot.label, dot.label), 0)
         # Base tick (from effect_value), then the status's special bonus.
         _dot_hurt(
             combatant,
