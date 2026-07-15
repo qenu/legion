@@ -224,9 +224,9 @@ PATCH: dict = {
         },
         {
             "key": "spider_scythe",
-            "name": "蜘蛛鐮刀",
+            "name": "蜘蛛巨鐮",
             "rarity": 5,
-            "description": "蜘蛛的鐮刀，鋒利無比，能用來製作武器。",
+            "description": "恐懼蜘蛛的鐮，鋒利無比，能用來製作武器。",
         },
         {
             "key": "spider_eye",
@@ -269,7 +269,34 @@ PATCH: dict = {
             ],
         },
     ],
-    # effect types: damage, heal, bleed, poison, burn, stun
+    # ------------------------------------------------------------------
+    # ACTIVE SKILLS -- every viable field:
+    #   key          (required) stable snake_case identity; never rename
+    #   name         (required) display text, patches freely
+    #   description  optional flavor text
+    #   effect_type  (required) one of:
+    #     damage  -- hits the target (def applies)
+    #     heal    -- restores the lowest-HP-ratio ALLY
+    #     shield  -- self-shield, absorbs all damage before HP; re-cast
+    #                refreshes (max), never stacks
+    #     stun    -- target loses effect_value ROUNDS of turns
+    #     bleed   -- DoT: effect_value per round for 3 rounds
+    #     poison  -- DoT: base + 1% of victim's max HP per round
+    #     burn    -- DoT: base, 30% chance per round to deal double
+    #     freeze  -- DoT: base, and 30% chance to skip each turn (3 turns)
+    #   effect_value (required) number or formula string, resolved at USE
+    #                time against live stats:
+    #     legacy vars:  {atk} {def} {speed} {hp} {max_hp}
+    #     namespaced:   {player.attack} {player.defense} {player.speed}
+    #                   {player.health} {player.max_health}
+    #                   {player.missing_health} {player.taunt} {player.shield}
+    #                   {target.*}  (same attrs; target = the ENEMY hit)
+    #     percent:      "{player.attack}*20% + 5"  (N% -> N/100)
+    #   cooldown     the wielder's OWN turns between uses (0 = every turn);
+    #                also the warm-up before the FIRST use
+    #   _status      optional: "disable" pulls it from combat, "remove"
+    #                tombstones (absence from this file also tombstones)
+    # ------------------------------------------------------------------
     "active_skills": [
         {
             "key": "slash",
@@ -427,6 +454,30 @@ PATCH: dict = {
         },
     ],
     # stat_bonus_type: hp, atk, def, speed, taunt
+    # ------------------------------------------------------------------
+    # PASSIVE SKILLS -- every viable field:
+    #   key              (required) stable snake_case identity; never rename
+    #   name             (required) display text, patches freely
+    #   description      optional flavor text
+    #   stat_bonus_type  (required) one of:
+    #     hp / atk / def / speed  -- flat combat-stat bonus
+    #     taunt   -- aggro pull (mob targeting weight; not a combat stat)
+    #     regen   -- HP per minute, out-of-combat only
+    #     bleed_res / poison_res / burn_res / freeze_res
+    #             -- flat reduction on EVERY proc of that DoT flavor
+    #                (tick and bonus alike, floor 0). NEGATIVE values are
+    #                WEAKNESSES: burn_res "-5" = every burn proc hits 5
+    #                harder -- the elemental counter-pick lever for mobs.
+    #                freeze_res only reduces the DoT; the turn-skip stays.
+    #   stat_bonus_value (required) number or formula string, evaluated
+    #                against BASE stats (before any passive applies) --
+    #                {player.*} allowed, {target.*} is NOT (no target;
+    #                the patch validator rejects it)
+    #   _status          optional: "disable" / "remove" (see actives)
+    # On weapons these scale with mount tier and craft mutation; on mobs
+    # they apply raw and may be gated by requirement_type
+    # (hp_below / player_dead / round).
+    # ------------------------------------------------------------------
     "passive_skills": [
         {
             "key": "grit",
@@ -499,7 +550,13 @@ PATCH: dict = {
             "name": "進食",
             "stat_bonus_type": "regen",
             "stat_bonus_value": 2,
-        }
+        },
+        {
+            "key": "poison_mastery",
+            "name": "毒素精通",
+            "stat_bonus_type": "poison_res",
+            "stat_bonus_value": 5,
+        },
     ],
     "weapons": [
         {
@@ -727,7 +784,7 @@ PATCH: dict = {
             ],
         },
         {
-            "key": "spider_scythe",
+            "key": "spider_blade",
             "name": "蜘蛛鐮刀",
             "category": "sword",
             "actives": [
@@ -1024,6 +1081,9 @@ PATCH: dict = {
                     "skill": "exoskeletal",
                     "requirement_type": "hp_below",
                     "requirement_value": 0.5,
+                },
+                {
+                    "key": "poison_mastery",
                 }
             ],
             "drops": [
@@ -1049,6 +1109,9 @@ PATCH: dict = {
                     "skill": "exoskeletal",
                     "requirement_type": "hp_below",
                     "requirement_value": 0.5,
+                },
+                {
+                    "key": "poison_mastery",
                 }
             ],
             "drops": [
@@ -1075,6 +1138,9 @@ PATCH: dict = {
                     "skill": "exoskeletal",
                     "requirement_type": "hp_below",
                     "requirement_value": 0.5,
+                },
+                {
+                    "key": "poison_mastery",
                 }
             ],
             "drops": [
@@ -1139,7 +1205,9 @@ PATCH: dict = {
                 {"skill": "poison_bite", "cooldown": 1, "hp_threshold": 1.0},
                 {"skill": "quick_strike", "cooldown": 0, "hp_threshold": 1.0},
                 ],
-            "passives": [],
+            "passives": [
+                {"key": "poison_mastery"}
+            ],
             "drops": [
                 {"material": "spider_fang", "weight": 2, "min": 1, "max": 2},
                 {"material": "spider_silk", "weight": 1, "min": 1, "max": 1},
@@ -1158,7 +1226,9 @@ PATCH: dict = {
                 {"skill": "poison_throw", "cooldown": 2, "hp_threshold": 1.0},
                 {"skill": "poison_arrow", "cooldown": 1, "hp_threshold": 1.0}
                 ],
-            "passives": [],
+            "passives": [
+                {"key": "poison_mastery"}
+            ],
             "drops": [
                 {"material": "spider_fang", "weight": 2, "min": 1, "max": 2},
                 {"material": "spider_silk", "weight": 1, "min": 1, "max": 1},
@@ -1183,7 +1253,8 @@ PATCH: dict = {
                     "skill": "exoskeletal",
                     "requirement_type": "hp_below",
                     "requirement_value": 0.5,
-                }
+                },
+                {"key": "poison_mastery"}
             ],
             "drops": [
                 {"material": "spider_scythe", "weight": 1, "min": 1, "max": 1},
@@ -1209,7 +1280,8 @@ PATCH: dict = {
                     "skill": "exoskeletal",
                     "requirement_type": "hp_below",
                     "requirement_value": 0.9,
-                }
+                },
+                {"key": "poison_mastery"}
             ],
             "drops": [
                 {"material": "cobweb", "weight": 3, "min": 1, "max": 3},
@@ -1632,9 +1704,9 @@ PATCH: dict = {
             ],
         },
         {
-            "key": "forge_spider_scythe",
+            "key": "forge_spider_blade",
             "name": "蜘蛛鐮刀",
-            "weapon": "spider_scythe",
+            "weapon": "spider_blade",
             "inputs": [
                 {"material": "spider_fang", "qty": 5},
                 {"material": "spider_scythe", "qty": 3},

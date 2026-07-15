@@ -242,6 +242,17 @@ class StatBonusType(StrEnum):
     HP = "hp"
     TAUNT = "taunt"  # aggro pull; weights mob target selection (not a combat stat)
     REGEN = "regen"  # HP recovered per minute (out-of-combat); food buff / passive
+    # DoT resistances: a FLAT reduction applied to EVERY proc of that flavor
+    # (the base tick and its bonus alike) -- poison tick dmg - poison_res,
+    # floor 0 (a fully-resisted proc doesn't even log). def never touches
+    # DoTs, so these are the only DoT mitigation besides shields.
+    # NEGATIVE values are WEAKNESSES: burn_res "-5" on a mob passive makes
+    # every burn proc hit 5 harder -- the content lever for elemental
+    # counter-picks (a proc that didn't happen still deals nothing).
+    BLEED_RES = "bleed_res"
+    POISON_RES = "poison_res"
+    BURN_RES = "burn_res"
+    FREEZE_RES = "freeze_res"  # reduces freeze's DoT; the turn-skip is unaffected
 
 
 class RequirementType(StrEnum):
@@ -271,6 +282,15 @@ class LifeSkillType(StrEnum):
     GARDEN = "garden"  # gather
     COOK = "cook"  # instant craft
     BREW = "brew"  # instant craft
+
+
+# DoT-resistance stat -> the DoT label it reduces (simulation dot_res keys).
+DOT_RESIST_LABELS = {
+    StatBonusType.BLEED_RES: "bleed",
+    StatBonusType.POISON_RES: "poison",
+    StatBonusType.BURN_RES: "burn",
+    StatBonusType.FREEZE_RES: "freeze",
+}
 
 
 # Zero-sum drain pools: weapon masteries, gathers, and crafts are THREE

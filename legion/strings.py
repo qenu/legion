@@ -257,6 +257,10 @@ STAT_NAMES = {
     "hp": "生命值",
     "taunt": "嘲諷",
     "regen": "生命回復",
+    "bleed_res": "流血抗性",
+    "poison_res": "中毒抗性",
+    "burn_res": "燃燒抗性",
+    "freeze_res": "冰凍抗性",
 }
 DEATH_TIMER_TITLE = "死亡回歸"
 DEATH_TIMER_VALUE = "<t:{revive}:R> 復活"
@@ -395,6 +399,11 @@ SKILL_PASSIVE_DESCRIPTION = {
     "speed": "速度 +{value:,}",
     "taunt": "嘲諷 +{value:,}",
     "regen": "每分鐘恢復 {value:,} 點生命值",
+    # {value:+,} keeps the sign honest: +3 = 抗性, -5 = 弱點 (額外受傷).
+    "bleed_res": "流血抗性 {value:+,}",
+    "poison_res": "中毒抗性 {value:+,}",
+    "burn_res": "燃燒抗性 {value:+,}",
+    "freeze_res": "冰凍抗性 {value:+,}",
 }
 SKILL_TIER_TAG = "T{tier}"
 SKILL_LOCKED_TAG = "<:lock:1526099265636667543> 需要{category}精通 Lv{req} 解鎖"

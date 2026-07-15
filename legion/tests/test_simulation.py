@@ -169,6 +169,46 @@ def test_shield_skill_grants_and_refreshes_without_stacking():
     assert player.shield == 50  # re-casts refresh, never stack past the roll
 
 
+def test_dot_resistance_reduces_every_proc():
+    # bleed 5/round vs bleed_res 3 -> 2 per tick.
+    player = make_player(hp=100, atk=1, speed=1)
+    player.dot_res = {"bleed": 3}
+    player.dots.append(DoT(dmg_per_round=5, rounds_left=3, source=player))
+    mob = make_mob(hp=10**6, atk=0, def_=10**6, speed=100, rounds_limit=3)
+    result = run_simulation([player], [mob], rng=random.Random(1))
+    ticks = [e for e in result.events if e.kind == "bleed_tick"]
+    assert ticks and all(e.value == 2 for e in ticks)
+
+
+def test_dot_full_resist_silences_the_proc():
+    player = make_player(hp=100, atk=1, speed=1)
+    player.dot_res = {"bleed": 99}
+    player.dots.append(DoT(dmg_per_round=5, rounds_left=3, source=player))
+    mob = make_mob(hp=10**6, atk=0, def_=10**6, speed=100, rounds_limit=3)
+    result = run_simulation([player], [mob], rng=random.Random(1))
+    assert not [e for e in result.events if e.kind == "bleed_tick"]
+    assert player.current_hp == 100 - 3  # only the mob's min-1 chip hits
+
+
+def test_negative_resistance_is_a_weakness():
+    # burn_res -5 on the victim: every burn proc hits 5 harder -- the
+    # elemental counter-pick lever. A bonus proc that didn't roll stays 0.
+    mob = make_mob(hp=1000, atk=0, def_=0, speed=100, rounds_limit=3)
+    mob.dot_res = {"burn": -5}
+    player = make_player(hp=100, atk=1, speed=1)
+    mob.dots.append(
+        DoT(dmg_per_round=10, rounds_left=3, source=player, label="burn")
+    )
+    result = run_simulation([player], [mob], rng=random.Random(1))
+    ticks = [e for e in result.events if e.kind == "burn_tick"]
+    assert ticks and all(e.value == 15 for e in ticks)  # 10 + 5 weakness
+    # burn's double procs (when they roll) are amplified too; when they
+    # don't roll, the weakness adds nothing.
+    for e in result.events:
+        if e.kind == "burn_effect":
+            assert e.value == 15
+
+
 def test_pack_won_only_when_every_mob_dies():
     pack = [make_mob(hp=40, atk=1), make_mob(hp=40, atk=1)]
     result = run_simulation([make_player(atk=30)], pack, rng=random.Random(1))

@@ -230,6 +230,45 @@ BLANK_FIELD_NAME = "​"  # zero-width space: a "blank" continuation header
 # (Discord rejects truly empty field names, so blank = invisible.)
 
 
+# DoT flavors whose per-round log lines collapse into one summed line.
+_DOT_LABELS = ("bleed", "poison", "burn", "freeze")
+
+
+def _collapse_dot_events(events: list[CombatEvent]) -> list[CombatEvent]:
+    """Within one round, merge each victim's DoT chatter into a single line
+    per flavor: base ticks AND bonus procs (poison spread, burn doubles) sum
+    into one ``{label}_tick`` event at the first tick's position. Purely
+    presentational -- the simulation's raw events are never mutated. The
+    mob's freeze SKIP ("freeze_effect" with no value) is not damage and
+    passes through untouched."""
+    out: list[CombatEvent] = []
+    sums: dict[tuple[str, str], CombatEvent] = {}
+    for e in events:
+        label = None
+        if e.kind.endswith("_tick"):
+            label = e.kind[: -len("_tick")]
+        elif e.kind.endswith("_effect") and e.value:
+            label = e.kind[: -len("_effect")]
+        if label not in _DOT_LABELS:
+            out.append(e)
+            continue
+        key = (e.actor, label)
+        merged = sums.get(key)
+        if merged is None:
+            merged = CombatEvent(
+                tick=e.tick,
+                round=e.round,
+                actor=e.actor,
+                kind=f"{label}_tick",
+                value=e.value,
+            )
+            sums[key] = merged
+            out.append(merged)
+        else:
+            merged.value += e.value
+    return out
+
+
 def _round_fields(name: str, lines: list[str]) -> list[tuple[str, str]]:
     """One round's event lines as embed fields that respect the 1024-char
     value cap: the first carries the round header, overflow continues in
@@ -268,11 +307,11 @@ def combat_log_embeds(
     fields: list[tuple[str, str]] = []
     for round_no in sorted(rounds):
         name = strings.COMBAT_LOG_FIELD.format(round_no=round_no)
-        # A busy round (big party + pack + DoT ticks) can blow the 1024-char
-        # field cap: split by line into continuation fields (blank names).
-        fields.extend(
-            _round_fields(name, [event_line(e) for e in rounds[round_no]])
-        )
+        # DoT chatter collapses to one summed line per victim per flavor;
+        # a still-busy round then splits into continuation fields (blank
+        # names) to respect the 1024-char field cap.
+        collapsed = _collapse_dot_events(rounds[round_no])
+        fields.extend(_round_fields(name, [event_line(e) for e in collapsed]))
     if not fields:  # a fight with no recorded events (shouldn't happen)
         fields = [
             (strings.COMBAT_LOG_FIELD.format(round_no=0), strings.COMBAT_ROUND_EMPTY)
@@ -309,7 +348,7 @@ def round_embed(
     events: list[CombatEvent],
     color: discord.Colour,
 ) -> discord.Embed:
-    lines = [event_line(e) for e in events]
+    lines = [event_line(e) for e in _collapse_dot_events(events)]
     embed = discord.Embed(
         description="\n".join(lines)[:4000] or strings.COMBAT_ROUND_EMPTY,
         color=color,

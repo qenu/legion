@@ -27,6 +27,7 @@ from maki.cogs.legion.constants import (
     BLEED_DURATION,
     ContentStatus,
     DEATH_HP,
+    DOT_RESIST_LABELS,
     POISON_DURATION,
     POISON_PCT_MAX_HP,
     BURN_DURATION,
@@ -126,6 +127,9 @@ class Combatant:
     # Absorbs ALL damage (hits and DoTs) before HP. Combat-only: granted by
     # SHIELD skills, never persisted. Re-casting REFRESHES (max), no stacking.
     shield: int = 0
+    # Flat per-proc DoT reduction, keyed by flavor ("poison": 3 = every
+    # poison proc deals 3 less, floor 0). From *_RES passives.
+    dot_res: dict[str, int] = field(default_factory=dict)
     dots: list[DoT] = field(default_factory=list)
 
     damage_dealt: int = 0
@@ -225,6 +229,7 @@ async def build_player_state(player: Player, legion_level: int = 0) -> PlayerSta
     )
     taunt = PLAYER_BASE_TAUNT
     regen_bonus = 0  # summed from equipped REGEN passives; read out-of-combat
+    dot_res: dict[str, int] = {}  # flavor -> flat per-proc reduction
     # Passive formulas evaluate against BASE stats (before any passive
     # applies) -- no ordering dependence, no self-compounding. Passives have
     # no target, so only the {player.*} namespace is exposed.
@@ -307,6 +312,9 @@ async def build_player_state(player: Player, legion_level: int = 0) -> PlayerSta
                 taunt += value
             elif bonus.stat_bonus_type == StatBonusType.REGEN:
                 regen_bonus += value
+            elif bonus.stat_bonus_type in DOT_RESIST_LABELS:
+                label = DOT_RESIST_LABELS[bonus.stat_bonus_type]
+                dot_res[label] = dot_res.get(label, 0) + value
 
     # Weapon-category mastery bonuses: applied ONCE per equipped category (a
     # dual-wield of the same type doesn't double them), for every unlock at or
@@ -326,6 +334,9 @@ async def build_player_state(player: Player, legion_level: int = 0) -> PlayerSta
                 speed += val
             elif stype == StatBonusType.TAUNT:
                 taunt += val
+            elif stype in DOT_RESIST_LABELS:  # StrEnum hashes as its value
+                label = DOT_RESIST_LABELS[StatBonusType(stype)]
+                dot_res[label] = dot_res.get(label, 0) + val
 
     # Timed food stat-buffs (atk/def/speed/taunt) still within their window.
     now_epoch = time.time()
@@ -353,6 +364,7 @@ async def build_player_state(player: Player, legion_level: int = 0) -> PlayerSta
         skills=skills,
         player=player,
         regen_bonus=regen_bonus,
+        dot_res=dot_res,
     )
 
 
@@ -459,6 +471,9 @@ def _apply_mob_passive(state: MobState, passive: MobPassive) -> None:
         state.speed += value
     elif bonus.stat_bonus_type == StatBonusType.TAUNT:
         state.taunt += value
+    elif bonus.stat_bonus_type in DOT_RESIST_LABELS:
+        label = DOT_RESIST_LABELS[bonus.stat_bonus_type]
+        state.dot_res[label] = state.dot_res.get(label, 0) + value
 
 
 def _combatant_stats(c: Combatant) -> CombatantStats:
@@ -857,11 +872,14 @@ def _apply_dots(
     for dot in combatant.dots:
         if not combatant.alive:
             break
+        # Every proc is reduced by the victim's flavor resistance (flat,
+        # floor 0 -- a fully-resisted proc doesn't even log).
+        res = combatant.dot_res.get(dot.label, 0)
         # Base tick (from effect_value), then the status's special bonus.
         _dot_hurt(
             combatant,
             dot.source,
-            dot.dmg_per_round,
+            max(0, dot.dmg_per_round - res),
             f"{dot.label}_tick",
             ctx,
             events,
@@ -875,7 +893,7 @@ def _apply_dots(
             _dot_hurt(
                 combatant,
                 dot.source,
-                bonus,
+                max(0, bonus - res) if bonus else 0,
                 f"{dot.label}_effect",
                 ctx,
                 events,
