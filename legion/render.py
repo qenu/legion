@@ -1121,7 +1121,11 @@ def patch_compare_embed(
     next_summary: dict[str, int],
     next_hash: str,
     color: discord.Colour,
+    weapon_groups: dict[str, list[str]] | None = None,
 ) -> discord.Embed:
+    """The patch diff. ``weapon_groups`` = the on-disk patch's weapons as
+    {category display name: [pre-formatted weapon lines]} -- one field per
+    category so the reviewer sees the arsenal at a glance."""
     embed = discord.Embed(
         title=f"🆕 {current_version} → {next_version} (`{next_hash}`)",
         description=next_notes or "*no notes*",
@@ -1133,7 +1137,15 @@ def patch_compare_embed(
         delta = new - old
         mark = f" ({'+' if delta > 0 else ''}{delta})" if delta else ""
         lines.append(f"**{key}**: {old} → {new}{mark}")
-    embed.add_field(name="Content", value="\n".join(lines) or "*no changes*")
+    embed.add_field(
+        name="Content", value="\n".join(lines) or "*no changes*", inline=False
+    )
+    for category, weapons in (weapon_groups or {}).items():
+        embed.add_field(
+            name=f"⚔️ {category} ({len(weapons)})",
+            value="\n".join(weapons)[:1024] or "*empty*",
+            inline=True,
+        )
     return embed
 
 

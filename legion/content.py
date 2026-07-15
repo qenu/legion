@@ -9,8 +9,8 @@ apply (rows are never hard-deleted; the /patch review shows removals).
 """
 
 PATCH: dict = {
-    "version": "0.2.6",
-    "notes": "spiderlings shouldnt have fangs ",
+    "version": "0.2.7",
+    "notes": "spiders",
     "materials": [
         {
             "key": "iron_ore",
@@ -204,6 +204,36 @@ PATCH: dict = {
             "stat_bonus_value": 30,
             "description": "綠色的藥水，能快速回復少量生命。",
         },
+        {
+            "key": "ancient_golem_core",
+            "name": "古代魔像核心",
+            "rarity": 4,
+            "description": "古代魔像的核心，蘊含強大的力量。",
+        },
+        {
+            "key": "spider_silk",
+            "name": "蜘蛛絲",
+            "rarity": 3,
+            "description": "蜘蛛吐出的絲，黏黏的，能用來製作一些東西。",
+        },
+        {
+            "key": "spider_egg",
+            "name": "蜘蛛卵",
+            "rarity": 4,
+            "description": "蜘蛛的卵，裡面似乎有小蜘蛛。",
+        },
+        {
+            "key": "spider_scythe",
+            "name": "蜘蛛鐮刀",
+            "rarity": 5,
+            "description": "蜘蛛的鐮刀，鋒利無比，能用來製作武器。",
+        },
+        {
+            "key": "spider_eye",
+            "name": "蜘蛛眼球",
+            "rarity": 3,
+            "description": "蜘蛛的眼球，能用來製作一些東西。",
+        },
     ],
     "categories": [
         {
@@ -367,6 +397,34 @@ PATCH: dict = {
             "effect_value": "{player.max_health} * 10%",
             "cooldown": 3,
         },
+        {
+            "key": "poison_bite",
+            "name": "毒咬",
+            "effect_type": "poison",
+            "effect_value": "{player.attack} * 20%",
+            "cooldown": 2,
+        },
+        {
+            "key": "poison_throw",
+            "name": "毒液投擲",
+            "effect_type": "poison",
+            "effect_value": "{target.max_health} * 3%",
+            "cooldown": 3,
+        },
+        {
+            "key": "quick_strike",
+            "name": "快速打擊",
+            "effect_type": "damage",
+            "effect_value": "{player.attack} + 20",
+            "cooldown": 1,
+        },
+        {
+            "key": "death_blow",
+            "name": "致命一擊",
+            "effect_type": "damage",
+            "effect_value": "{player.attack} * 2 + 10",
+            "cooldown": 3,
+        },
     ],
     # stat_bonus_type: hp, atk, def, speed, taunt
     "passive_skills": [
@@ -436,6 +494,12 @@ PATCH: dict = {
             "stat_bonus_type": "regen",
             "stat_bonus_value": 3,
         },
+        {
+            "key": "consumption",
+            "name": "進食",
+            "stat_bonus_type": "regen",
+            "stat_bonus_value": 2,
+        }
     ],
     "weapons": [
         {
@@ -646,6 +710,60 @@ PATCH: dict = {
                 {"skill": "grit", "tier": 3, "req": 5},
                 {"skill": "exoskeletal", "tier": 2, "req": 6},
                 {"skill": "resilience", "tier": 3, "req": 4}
+            ],
+        },
+        {
+            "key": "ancient_golem_staff",
+            "name": "古代魔像法杖",
+            "category": "staff",
+            "actives": [
+                {"skill": "rock_throw", "tier": 3, "req": 4},
+                {"skill": "quake", "tier": 3, "req": 5},
+                {"skill": "mend", "tier": 3, "req": 6}
+            ],
+            "passives": [
+                {"skill": "focus", "tier": 3, "req": 4},
+                {"skill": "resilience", "tier": 1, "req": 5},
+            ],
+        },
+        {
+            "key": "spider_scythe",
+            "name": "蜘蛛鐮刀",
+            "category": "sword",
+            "actives": [
+                {"skill": "poison_bite", "tier": 4, "req": 5},
+            ],
+            "passives": [
+                {"skill": "grit", "tier": 2, "req": 4},
+                {"skill": "focus", "tier": 2, "req": 4},
+            ],
+            "main_weapon": False,
+        },
+        {
+            "key": "eye_of_the_spider",
+            "name": "蜘蛛之眼",
+            "category": "staff",
+            "actives": [
+                {"skill": "poison_throw", "tier": 4, "req": 5},
+            ],
+            "passives": [
+                {"skill": "focus", "tier": 2, "req": 4},
+                {"skill": "exoskeletal", "tier": 1, "req": 5},
+            ],
+            "main_weapon": False,
+        },
+        {
+            "key": "spider_staff",
+            "name": "蜘蛛法杖",
+            "category": "staff",
+            "actives": [
+                {"skill": "poison_throw", "tier": 4, "req": 5},
+                {"skill": "poison_bite", "tier": 4, "req": 5},
+            ],
+            "passives": [
+                {"skill": "focus", "tier": 3, "req": 5},
+                {"skill": "vitality", "tier": 1, "req": 5},
+                {"skill": "consumption", "tier": 1, "req": 7}
             ],
         },
     ],
@@ -982,15 +1100,19 @@ PATCH: dict = {
             ],
         },
         {
-            "key": "mossy_golem",
-            "name": "苔蘚魔像",
+            "key": "mossy_ancient_golem",
+            "name": "苔蘚古代魔像",
             "tier": 3,
             "rounds_limit": 6,
-            "hp": 200,
+            "hp": 270,
             "atk": 15,
-            "def": 12,
+            "def": 15,
             "speed": 4,
-            "skills": [{"skill": "quake", "cooldown": 3, "hp_threshold": 0.7}],
+            "skills": [
+                {"skill": "quake", "cooldown": 3, "hp_threshold": 0.7},
+                {"skill": "rock_throw", "cooldown": 2, "hp_threshold": 1.0},
+                {"skill": "death_blow", "cooldown": 1, "hp_threshold": 0.5}
+            ],
             "passives": [
                 {
                     "skill": "thick_hide",
@@ -999,9 +1121,99 @@ PATCH: dict = {
                 }
             ],
             "drops": [
-                {"material": "golem_core", "weight": 1, "min": 1, "max": 1},
+                {"material": "ancient_golem_core", "weight": 1, "min": 1, "max": 1},
                 {"material": "thick_bark", "weight": 2, "min": 1, "max": 2},
                 {"material": "moss_patch", "weight": 3, "min": 2, "max": 4},
+            ],
+        },
+        {
+            "key": "black_spider",
+            "name": "黑蜘蛛",
+            "tier": 4,
+            "rounds_limit": 6,
+            "hp": 200,
+            "atk": 30,
+            "def": 10,
+            "speed": 15,
+            "skills": [
+                {"skill": "poison_bite", "cooldown": 1, "hp_threshold": 1.0},
+                {"skill": "quick_strike", "cooldown": 0, "hp_threshold": 1.0},
+                ],
+            "passives": [],
+            "drops": [
+                {"material": "spider_fang", "weight": 2, "min": 1, "max": 2},
+                {"material": "spider_silk", "weight": 1, "min": 1, "max": 1},
+            ],
+        },
+        {
+            "key": "red_spider",
+            "name": "紅蜘蛛",
+            "tier": 4,
+            "rounds_limit": 6,
+            "hp": 180,
+            "atk": 35,
+            "def": 8,
+            "speed": 18,
+            "skills": [
+                {"skill": "poison_throw", "cooldown": 2, "hp_threshold": 1.0},
+                {"skill": "poison_arrow", "cooldown": 1, "hp_threshold": 1.0}
+                ],
+            "passives": [],
+            "drops": [
+                {"material": "spider_fang", "weight": 2, "min": 1, "max": 2},
+                {"material": "spider_silk", "weight": 1, "min": 1, "max": 1},
+            ],
+        },
+        {
+            "key": "grim_spider",
+            "name": "恐懼蜘蛛",
+            "tier": 4,
+            "rounds_limit": 6,
+            "hp": 250,
+            "atk": 40,
+            "def": 12,
+            "speed": 20,
+            "skills": [
+                {"skill": "poison_bite", "cooldown": 1, "hp_threshold": 1.0},
+                {"skill": "poison_throw", "cooldown": 0, "hp_threshold": 1.0},
+                {"skill": "quick_strike", "cooldown": 1, "hp_threshold": 0.5}
+            ],
+            "passives": [
+                {
+                    "skill": "exoskeletal",
+                    "requirement_type": "hp_below",
+                    "requirement_value": 0.5,
+                }
+            ],
+            "drops": [
+                {"material": "spider_scythe", "weight": 1, "min": 1, "max": 1},
+                {"material": "poison_gland", "weight": 1, "min": 1, "max": 1},
+                {"material": "cobweb", "weight": 3, "min": 1, "max": 3},
+            ],
+        },
+        {
+            "key": "guardian_spider",
+            "name": "守護蜘蛛",
+            "tier": 5,
+            "rounds_limit": 6,
+            "hp": 300,
+            "atk": 45,
+            "def": 15,
+            "speed": 10,
+            "skills": [
+                {"skill": "poison_throw", "cooldown": 1, "hp_threshold": 1.0},
+                {"skill": "perserverance", "cooldown": 0, "hp_threshold": 0.5},
+            ],
+            "passives": [
+                {
+                    "skill": "exoskeletal",
+                    "requirement_type": "hp_below",
+                    "requirement_value": 0.9,
+                }
+            ],
+            "drops": [
+                {"material": "cobweb", "weight": 3, "min": 1, "max": 3},
+                {"material": "spider_egg", "weight": 1, "min": 1, "max": 1},
             ],
         },
     ],
@@ -1083,8 +1295,29 @@ PATCH: dict = {
             "description": "陰暗潮濕的洞穴，彷彿有什麼東西在注視著你。",
             "pool": [
                 {"mob": "dark_stone_golem", "weight": 2},
-                {"mob": "cave_spider", "weight": 3},
-                {"mob": "mossy_golem", "weight": 1},
+                {"mob": "black_spider", "weight": 3},
+                {"mobs": ["black_spider", "spiderling"], "weight": 3},
+                {"mobs": ["dark_stone_golem", "stone_golem"], "weight": 2},
+                {"mobs": ["mossy_ancient_golem", "stone_golem", "stone_golem"], "weight": 1},
+                {"mobs": ["mossy_ancient_golem", "dark_stone_golem"], "weight": 1},
+            ],
+        },
+        {
+            "key": "spider_nest_depths",
+            "name": "蜘蛛巢穴深處",
+            "danger": 5,
+            "min_legion_level": 5,
+            "description": "蜘蛛巢穴的深處，空氣中充滿了毒氣和黏稠的蛛絲。",
+            "pool": [
+                {"mob": "red_spider", "weight": 2},
+                {"mob": "black_spider", "weight": 2},
+                {"mob": "grim_spider", "weight": 1},
+                {"mob": "guardian_spider", "weight": 1},
+                {"mobs": ["grim_spider", "black_spider"], "weight": 1},
+                {"mobs": ["grim_spider", "red_spider"], "weight": 1},
+                {"mobs": ["guardian_spider", "black_spider"], "weight": 0.5},
+                {"mobs": ["guardian_spider", "red_spider"], "weight": 0.5},
+                {"mobs": ["guardian_spider", "red_spider", "black_spider"], "weight": 0.5},
             ],
         },
     ],
@@ -1387,6 +1620,50 @@ PATCH: dict = {
                 {"material": "iron_ore", "qty": 5},
             ],
         },
+        {
+            "key": "forge_ancient_golem_staff",
+            "name": "古代魔像法杖",
+            "weapon": "ancient_golem_staff",
+            "inputs": [
+                {"material": "ancient_golem_core", "qty": 3},
+                {"material": "golem_core", "qty": 5},
+                {"material": "silver_ore", "qty": 5},
+                {"material": "cobweb", "qty": 15},
+            ],
+        },
+        {
+            "key": "forge_spider_scythe",
+            "name": "蜘蛛鐮刀",
+            "weapon": "spider_scythe",
+            "inputs": [
+                {"material": "spider_fang", "qty": 5},
+                {"material": "spider_scythe", "qty": 3},
+                {"material": "spider_silk", "qty": 3},
+                {"material": "silver_ore", "qty": 10},
+            ],
+        },
+        {
+            "key": "forge_eye_of_the_spider",
+            "name": "蜘蛛之眼",
+            "weapon": "eye_of_the_spider",
+            "inputs": [
+                {"material": "spider_eye", "qty": 4},
+                {"material": "spider_silk", "qty": 5},
+                {"material": "poison_gland", "qty": 4},
+                {"material": "green_potion", "qty": 10},
+            ],            
+        },
+        {
+            "key": "forge_spider_staff",
+            "name": "蜘蛛法杖",
+            "weapon": "spider_staff",
+            "inputs": [
+                {"material": "spider_egg", "qty": 2},
+                {"material": "spider_silk", "qty": 3},
+                {"material": "poison_gland", "qty": 2},
+                {"material": "silver_ore", "qty": 12},
+            ],
+        }
     ],
     "upgrade_costs": [
         {"level": 2, "material": "slime_goo", "base_qty": 5},
@@ -1401,6 +1678,8 @@ PATCH: dict = {
         {"level": 5, "material": "poison_gland", "base_qty": 6},
         {"level": 5, "material": "cobweb", "base_qty": 20},
         # {"level": 6, "material": "silver_ore", "base_qty": 10},
+        # {"level": 6, "material": "spider_silk", "base_qty": 10},
+        # {"level": 6, "material": "ancient_golem_core", "base_qty": 10},
     ],
     # Daily supply (once/day button on /legion). Grouped by contribution
     # threshold like upgrade_costs are by level: a player receives EVERY entry

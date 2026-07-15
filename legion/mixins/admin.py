@@ -473,6 +473,29 @@ class AdminMixin(LegionCogBase):
             interaction, content=strings.PATCH_UPDATE_FOUND, view=view
         )
 
+    @staticmethod
+    def _patch_weapon_groups() -> dict[str, list[str]]:
+        """The on-disk patch's weapons grouped by category for the diff view:
+        each line is name + hand (主/副), struck through when the entry is
+        disabled/removed. WIP stubs (no key) are skipped."""
+        cat_names = {
+            c["key"]: c.get("name", c["key"]) for c in PATCH.get("categories", [])
+        }
+        groups: dict[str, list[str]] = {}
+        for w in PATCH.get("weapons", []):
+            if not w.get("key"):
+                continue  # half-written stub: the validator flags it anyway
+            hand = "主" if w.get("main_weapon", True) else "副"
+            line = f"{w.get('name') or w['key']} · {hand}"
+            status = str(w.get("_status", "enabled")).lower()
+            if status in ("disable", "disabled"):
+                line = f"~~{line}~~ (off)"
+            elif status in ("remove", "removed"):
+                line = f"~~{line}~~ 🗑️"
+            category = cat_names.get(w.get("category"), w.get("category") or "?")
+            groups.setdefault(category, []).append(line)
+        return groups
+
     async def patch_show_compare(self, interaction: discord.Interaction) -> None:
         current = await self.patches.current()
         embed = render.patch_compare_embed(
@@ -483,6 +506,7 @@ class AdminMixin(LegionCogBase):
             content_summary(),
             content_hash(),
             self.bot.color,
+            weapon_groups=self._patch_weapon_groups(),
         )
         # Review safety net: keys that vanished from content.py get tombstoned
         # at apply -- an accidental key rename shows up right here.
