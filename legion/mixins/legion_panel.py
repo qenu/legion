@@ -168,9 +168,18 @@ class LegionPanelMixin(LegionCogBase):
     # --- donations -------------------------------------------------------------
 
     async def show_donate(
-        self, interaction: discord.Interaction, legion: Legion, note: str | None = None
+        self,
+        interaction: discord.Interaction,
+        legion: Legion,
+        note: str | None = None,
+        fresh: bool = False,
     ) -> None:
-        """The donate panel: member's stacks tagged with upgrade-sheet needs."""
+        """The donate panel: member's stacks tagged with upgrade-sheet needs.
+
+        ``fresh=True`` (the /legion 捐贈 button, open to every member) sends
+        the panel as the presser's OWN ephemeral message and leaves the shared
+        legion embed untouched; the default edits in place -- the panel's own
+        buttons refreshing themselves after a donation."""
         player = await self.players.get(interaction.user.id)
         if player is None or player.legion_id != legion.id:
             await self._notify(interaction, strings.DONATE_MEMBERS_ONLY)
@@ -185,14 +194,20 @@ class LegionPanelMixin(LegionCogBase):
             ).prefetch_related("material")
             if s.material_id in sheet_map
         ]
-        await self._edit_tracked(
-            interaction,
-            content=note,
-            embed=render.donate_embed(legion, stacks, sheet_map, self.bot.color),
-            view=DonateView(
-                self, interaction.user.id, player, legion, stacks, sheet_map
-            ),
-        )
+        embed = render.donate_embed(legion, stacks, sheet_map, self.bot.color)
+        view = DonateView(self, interaction.user.id, player, legion, stacks, sheet_map)
+        if fresh:
+            if interaction.response.is_done():
+                view.message = await interaction.followup.send(
+                    content=note, embed=embed, view=view, ephemeral=True, wait=True
+                )
+            else:
+                await interaction.response.send_message(
+                    content=note, embed=embed, view=view, ephemeral=True
+                )
+                view.message = await interaction.original_response()
+            return
+        await self._edit_tracked(interaction, content=note, embed=embed, view=view)
 
     async def do_donate(
         self,

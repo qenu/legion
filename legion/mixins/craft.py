@@ -32,6 +32,7 @@ from maki.cogs.legion.model.model import (
 from maki.cogs.legion.views import (
     CraftConfirmView,
     CraftHomeView,
+    CraftResultView,
     CraftSurfaceView,
     RecipeDetailView,
 )
@@ -330,6 +331,8 @@ class CraftMixin(LegionCogBase):
             mastery = await WeaponMastery.get_or_none(
                 player=player, category_id=pw.weapon.category_id
             )
+            # Fresh from the anvil: 裝備 or 拆解 right here, no inventory trip.
+            result_view = CraftResultView(self, interaction.user.id, player, pw.id)
             await message.edit(
                 content=None,
                 embed=render.weapon_detail_embed(
@@ -339,7 +342,9 @@ class CraftMixin(LegionCogBase):
                     mastery.level if mastery else 0,
                     self.bot.color,
                 ),
+                view=result_view,
             )
+            result_view.message = message
         else:
             if recipe.result_material is not None:
                 qty = recipe.result_qty

@@ -225,6 +225,33 @@ def event_line(e: CombatEvent) -> str:
 
 COMBAT_LOG_FIELDS_PER_EMBED = 6
 COMBAT_LOG_EMBED_CHAR_BUDGET = 5500  # under Discord's 6000 total-embed ceiling
+EMBED_FIELD_VALUE_LIMIT = 1024  # Discord's hard per-field cap
+BLANK_FIELD_NAME = "​"  # zero-width space: a "blank" continuation header
+# (Discord rejects truly empty field names, so blank = invisible.)
+
+
+def _round_fields(name: str, lines: list[str]) -> list[tuple[str, str]]:
+    """One round's event lines as embed fields that respect the 1024-char
+    value cap: the first carries the round header, overflow continues in
+    extra fields with a blank name -- split on LINE boundaries, never
+    mid-sentence."""
+    chunks: list[str] = []
+    buf = ""
+    for line in lines:
+        line = line[:EMBED_FIELD_VALUE_LIMIT]  # single monster line safety
+        if buf and len(buf) + 1 + len(line) > EMBED_FIELD_VALUE_LIMIT:
+            chunks.append(buf)
+            buf = line
+        else:
+            buf = f"{buf}\n{line}" if buf else line
+    if buf:
+        chunks.append(buf)
+    if not chunks:
+        chunks = [strings.COMBAT_ROUND_EMPTY]
+    return [
+        (name if i == 0 else BLANK_FIELD_NAME, chunk)
+        for i, chunk in enumerate(chunks)
+    ]
 
 
 def combat_log_embeds(
@@ -241,8 +268,11 @@ def combat_log_embeds(
     fields: list[tuple[str, str]] = []
     for round_no in sorted(rounds):
         name = strings.COMBAT_LOG_FIELD.format(round_no=round_no)
-        value = "\n".join(event_line(e) for e in rounds[round_no])
-        fields.append((name, value[:1024] or strings.COMBAT_ROUND_EMPTY))
+        # A busy round (big party + pack + DoT ticks) can blow the 1024-char
+        # field cap: split by line into continuation fields (blank names).
+        fields.extend(
+            _round_fields(name, [event_line(e) for e in rounds[round_no]])
+        )
     if not fields:  # a fight with no recorded events (shouldn't happen)
         fields = [
             (strings.COMBAT_LOG_FIELD.format(round_no=0), strings.COMBAT_ROUND_EMPTY)

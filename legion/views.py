@@ -357,11 +357,16 @@ class LegionView(_AuthorOnly):
             self.upgrade.disabled = True
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        # These two aren't author-gated: Upgrade is perm-gated (any officer),
-        # and Daily Supply is personal (any member claims their own).
+        # These aren't author-gated: Upgrade is perm-gated (any officer),
+        # Daily Supply is personal (any member claims their own), and Donate
+        # opens the presser's OWN ephemeral panel (any member may give).
         if interaction.message is not None:
             self.message = interaction.message
-        open_buttons = {self.upgrade.custom_id, self.daily_supply.custom_id}
+        open_buttons = {
+            self.upgrade.custom_id,
+            self.daily_supply.custom_id,
+            self.donate.custom_id,
+        }
         if interaction.data and interaction.data.get("custom_id") in open_buttons:
             return True
         return await super().interaction_check(interaction)
@@ -378,7 +383,9 @@ class LegionView(_AuthorOnly):
     async def donate(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        await self.cog.show_donate(interaction, self.legion)
+        # fresh=True: the panel arrives as the presser's own ephemeral message
+        # -- the shared /legion embed is never edited.
+        await self.cog.show_donate(interaction, self.legion, fresh=True)
 
     @discord.ui.button(label=MEMBERS_TITLE, style=discord.ButtonStyle.secondary, row=0)
     async def members(
@@ -900,6 +907,30 @@ class WeaponDetailView(_AuthorOnly):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog.show_inventory_category(interaction, self.player, KIND_WEAPONS)
+
+
+class CraftResultView(_AuthorOnly):
+    """On the fresh-forged weapon message: 裝備 straight from the anvil, or
+    拆解 immediately (through the usual are-you-sure). Equip re-renders into
+    the full weapon detail (this view retires there)."""
+
+    def __init__(self, cog: "LegionCog", author_id: int, player: Player, pw_id: int):
+        super().__init__(author_id=author_id)
+        self.cog = cog
+        self.player = player
+        self.pw_id = pw_id
+
+    @discord.ui.button(label=EQUIP_TITLE, style=discord.ButtonStyle.green)
+    async def equip(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self.cog.press_detail_equip(interaction, self.player, self.pw_id)
+
+    @discord.ui.button(label=INVENTORY_DISMANTLE, style=discord.ButtonStyle.gray)
+    async def dismantle(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self.cog.press_dismantle(interaction, self.player, f"w:{self.pw_id}")
 
 
 # --- gathering ---------------------------------------------------------------------
