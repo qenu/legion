@@ -139,7 +139,11 @@ class ActiveSkill(Model):
     name = fields.CharField(max_length=32)
     description = fields.TextField(null=True)
 
-    effect_type = fields.CharEnumField(EffectType)
+    # max_length pinned WIDE: CharEnumField auto-sizes to the longest value,
+    # which silently drifts from the DB column when the enum grows (the
+    # varchar(5) poison_res incident). 16 leaves room; keep in sync with
+    # migration 0007.
+    effect_type = fields.CharEnumField(EffectType, max_length=16)
     # Formula string: "20", "{atk} + 12", "{player.attack}*20% + 5",
     # "{target.missing_health}*5%" -- resolved at use time against the
     # actor's live stats, with the enemy exposed as {target.*}
@@ -167,7 +171,9 @@ class PassiveSkill(Model):
     name = fields.CharField(max_length=32)
     description = fields.TextField(null=True)
 
-    stat_bonus_type = fields.CharEnumField(StatBonusType)
+    # Pinned wide (see ActiveSkill.effect_type): *_res values outgrew the
+    # auto-sized varchar(5) the table was created with.
+    stat_bonus_type = fields.CharEnumField(StatBonusType, max_length=16)
     # Formula string, evaluated against BASE stats (before passives apply).
     stat_bonus_value = fields.CharField(max_length=64, default="0")
 
@@ -467,7 +473,8 @@ class Material(Model):
     kind = fields.CharEnumField(MaterialKind, default=MaterialKind.MATERIAL)
     rarity = fields.IntField(default=1)
 
-    stat_bonus_type = fields.CharEnumField(StatBonusType, null=True)
+    # Pinned wide (see ActiveSkill.effect_type / migration 0007).
+    stat_bonus_type = fields.CharEnumField(StatBonusType, null=True, max_length=16)
     stat_bonus_value = fields.IntField(null=True)
     duration = fields.IntField(null=True)  # seconds; null = instant
 
