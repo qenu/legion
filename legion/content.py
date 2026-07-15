@@ -1206,7 +1206,7 @@ PATCH: dict = {
                 {"skill": "quick_strike", "cooldown": 0, "hp_threshold": 1.0},
                 ],
             "passives": [
-                {"key": "poison_mastery"}
+                {"skill": "poison_mastery"}
             ],
             "drops": [
                 {"material": "spider_fang", "weight": 2, "min": 1, "max": 2},
@@ -1227,7 +1227,7 @@ PATCH: dict = {
                 {"skill": "poison_arrow", "cooldown": 1, "hp_threshold": 1.0}
                 ],
             "passives": [
-                {"key": "poison_mastery"}
+                {"skill": "poison_mastery"}
             ],
             "drops": [
                 {"material": "spider_fang", "weight": 2, "min": 1, "max": 2},
@@ -1254,7 +1254,7 @@ PATCH: dict = {
                     "requirement_type": "hp_below",
                     "requirement_value": 0.5,
                 },
-                {"key": "poison_mastery"}
+                {"skill": "poison_mastery"}
             ],
             "drops": [
                 {"material": "spider_scythe", "weight": 1, "min": 1, "max": 1},
@@ -1281,7 +1281,7 @@ PATCH: dict = {
                     "requirement_type": "hp_below",
                     "requirement_value": 0.9,
                 },
-                {"key": "poison_mastery"}
+                {"skill": "poison_mastery"}
             ],
             "drops": [
                 {"material": "cobweb", "weight": 3, "min": 1, "max": 3},
