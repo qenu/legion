@@ -560,7 +560,7 @@ PATCH: dict = {
         {
             "key": "flame_weakness",
             "name": "火焰弱點",
-            "stat_bonus_type": "flame_res",
+            "stat_bonus_type": "burn_res",
             "stat_bonus_value": -5
         },
     ],
