@@ -323,7 +323,7 @@ CRAFT_NEED_MASTERY = "需要 {skill} 熟練度 Lv{req} 以上"
 CRAFT_MASTERY_TAG = "Lv.{level}"
 LIFE_SKILL_NAMES = {
     "mine": "採礦",
-    "garden": "園藝",
+    "garden": "採集",
     "cook": "烹飪",
     "brew": "釀造",
     "forge": "鍛造",  # technically not a life skill, but it's in the same menu

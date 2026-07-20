@@ -9,8 +9,8 @@ apply (rows are never hard-deleted; the /patch review shows removals).
 """
 
 PATCH: dict = {
-    "version": "0.2.7",
-    "notes": "spiders",
+    "version": "0.2.8",
+    "notes": "Added tail_soup material and updated grim_spider stats.",
     "materials": [
         {
             "key": "iron_ore",
@@ -233,6 +233,12 @@ PATCH: dict = {
             "name": "蜘蛛眼球",
             "rarity": 3,
             "description": "蜘蛛的眼球，能用來製作一些東西。",
+        },
+        {
+            "key": "tail_soup",
+            "name": "尾骨湯",
+            "rarity": 2,
+            "description": "用尾骨熬製的湯，滋味獨特。",
         },
     ],
     "categories": [
@@ -1312,6 +1318,188 @@ PATCH: dict = {
                 {"material": "spider_egg", "weight": 1, "min": 1, "max": 1},
             ],
         },
+        {
+            "key": "mixed_golem",
+            "name": "混合魔像",
+            "tier": 5,
+            "rounds_limit": 9,
+            "hp": 350,
+            "atk": 50,
+            "def": 20,
+            "speed": 6,
+            "skills": [
+                {"skill": "quake", "cooldown": 3, "hp_threshold": 0.7},
+                {"skill": "rock_throw", "cooldown": 2, "hp_threshold": 1.0},
+                {"skill": "death_blow", "cooldown": 1, "hp_threshold": 0.5}
+            ],
+            "passives": [
+                {
+                    "skill": "thick_hide",
+                    "requirement_type": "hp_below",
+                    "requirement_value": 0.8,
+                },
+                {
+                    "skill": "flame_weakness",
+                }
+            ],
+            "drops": [
+                {"material": "ancient_golem_core", "weight": 1, "min": 1, "max": 1},
+                {"material": "dark_golem_core", "weight": 1, "min": 1, "max": 1},
+                {"material": "moss_patch", "weight": 2, "min": 1, "max": 2},
+                {"material": "rough_stone", "weight": 3, "min": 2, "max": 4},
+            ],  
+        },
+        {
+            "key": "ice_golem",
+            "name": "冰霜魔像",
+            "tier": 5,
+            "rounds_limit": 9,
+            "hp": 400,
+            "atk": 45,
+            "def": 25,
+            "speed": 5,
+            "skills": [
+                {"skill": "quake", "cooldown": 3, "hp_threshold": 0.7},
+                {"skill": "ice_blast", "cooldown": 2, "hp_threshold": 1.0},
+                {"skill": "death_blow", "cooldown": 1, "hp_threshold": 0.5}
+            ],
+            "passives": [
+                {
+                    "skill": "thick_hide",
+                    "requirement_type": "hp_below",
+                    "requirement_value": 0.8,
+                },
+                {
+                    "skill": "ice_mastery",
+                }
+            ],
+            "drops": [
+                {"material": "ice_golem_core", "weight": 1, "min": 1, "max": 1},
+                {"material": "frost_essence", "weight": 2, "min": 1, "max": 2},
+                {"material": "rough_stone", "weight": 3, "min": 2, "max": 4},
+            ],  
+        },
+        {
+            "key": "rock_golem",
+            "name": "岩石魔像",
+            "tier": 5,
+            "rounds_limit": 9,
+            "hp": 450,
+            "atk": 50,
+            "def": 30,
+            "speed": 4,
+            "skills": [
+                {"skill": "quake", "cooldown": 3, "hp_threshold": 0.7},
+                {"skill": "rock_throw", "cooldown": 2, "hp_threshold": 1.0},
+                {"skill": "death_blow", "cooldown": 1, "hp_threshold": 0.5}
+            ],
+            "passives": [
+                {
+                    "skill": "thick_hide",
+                    "requirement_type": "hp_below",
+                    "requirement_value": 0.8,
+                },
+                {
+                    "skill": "flame_weakness",
+                }   
+                ],
+            "drops": [
+                {"material": "rock_golem_core", "weight": 1, "min": 1, "max": 1},
+                {"material": "rough_stone", "weight": 3, "min": 2, "max": 4},
+                {"material": "iron_ore", "weight": 2, "min": 1, "max": 2},
+            ],
+        },
+        {
+            "key": "enchanted_golem",
+            "name": "附魔魔像",
+            "tier": 5,
+            "rounds_limit": 9,
+            "hp": 400,
+            "atk": 55,
+            "def": 20,
+            "speed": 6,
+            "skills": [
+                {"skill": "quake", "cooldown": 3, "hp_threshold": 0.7},
+                {"skill": "rock_throw", "cooldown": 2, "hp_threshold": 1.0},
+                {"skill": "death_blow", "cooldown": 1, "hp_threshold": 0.5}
+            ],
+            "passives": [
+                {
+                    "skill": "thick_hide",
+                    "requirement_type": "hp_below",
+                    "requirement_value": 0.8,   
+                },
+                {
+                    "skill": "magic_mastery",
+                }
+            ],
+            "drops": [
+                {"material": "enchanted_golem_core", "weight": 1, "min": 1, "max": 1},
+                {"material": "magic_essence", "weight": 2, "min": 1, "max": 2},
+                {"material": "rough_stone", "weight": 3, "min": 2, "max": 4},
+            ],
+        },
+        {
+            "key": "lava_golem",
+            "name": "熔岩魔像",
+            "tier": 5,
+            "rounds_limit": 9,
+            "hp": 500,
+            "atk": 60,
+            "def": 25,
+            "speed": 5,
+            "skills": [
+                {"skill": "quake", "cooldown": 3, "hp_threshold": 0.7},
+                {"skill": "lava_blast", "cooldown": 2, "hp_threshold": 1.0},
+                {"skill": "death_blow", "cooldown": 1, "hp_threshold": 0.5}
+            ],
+            "passives": [
+                {
+                    "skill": "thick_hide",
+                    "requirement_type": "hp_below",
+                    "requirement_value": 0.8,   
+                },
+                {
+                    "skill": "magic_mastery",
+                }
+            ],
+            "drops": [
+                {"material": "lava_golem_core", "weight": 1, "min": 1, "max": 1},
+                {"material": "fire_essence", "weight": 2, "min": 1, "max": 2},
+                {"material": "rough_stone", "weight": 3, "min": 2, "max": 4},
+            ],
+        },
+        {
+            "key": "ancient_golem",
+            "name": "古代魔像",
+            "tier": 5,
+            "rounds_limit": 9,
+            "hp": 600,
+            "atk": 70,
+            "def": 30,
+            "speed": 4,
+            "skills": [
+                {"skill": "quake", "cooldown": 3, "hp_threshold": 0.7},
+                {"skill": "rock_throw", "cooldown": 2, "hp_threshold": 1.0},
+                {"skill": "death_blow", "cooldown": 1, "hp_threshold": 0.5}
+            ],
+            "passives": [
+                {
+                    "skill": "thick_hide",
+                    "requirement_type": "hp_below",
+                    "requirement_value": 0.8,
+                },
+                {
+                    "skill": "flame_weakness",  
+                },
+            ],
+            "drops": [
+                {"material": "ancient_golem_core", "weight": 1, "min": 1, "max": 1},
+                {"material": "dark_golem_core", "weight": 1, "min": 1, "max": 1},
+                {"material": "moss_patch", "weight": 2, "min": 1, "max": 2},
+                {"material": "rough_stone", "weight": 3, "min": 2, "max": 4},
+            ],
+        }
     ],
     "grounds": [
         {
@@ -1384,11 +1572,11 @@ PATCH: dict = {
             ],
         },
         {
-            "key": "gloomy_cavern",
-            "name": "陰暗洞穴",
+            "key": "ancient_ruins",
+            "name": "古代遺跡",
             "danger": 5,
             "min_legion_level": 5,
-            "description": "陰暗潮濕的洞穴，彷彿有什麼東西在注視著你。",
+            "description": "這裡是古代文明的遺跡，充滿了神秘的氣息。",
             "pool": [
                 {"mob": "dark_stone_golem", "weight": 2},
                 {"mob": "black_spider", "weight": 3},
@@ -1416,10 +1604,25 @@ PATCH: dict = {
                 {"mobs": ["guardian_spider", "red_spider", "black_spider"], "weight": 0.5},
             ],
         },
+        {
+            "key": "ancient_ruins_depths",
+            "name": "古代遺跡深處",
+            "danger": 5,
+            "min_legion_level": 5,
+            "description": "古代遺跡的深處，充滿了神秘的氣息。",
+            "pool": [
+                {"mob": "dark_stone_golem", "weight": 2},
+                {"mob": "black_spider", "weight": 3},
+                {"mobs": ["black_spider", "spiderling"], "weight": 3},
+                {"mobs": ["dark_stone_golem", "stone_golem"], "weight": 2},
+                {"mobs": ["mossy_ancient_golem", "stone_golem", "stone_golem"], "weight": 1},
+                {"mobs": ["mossy_ancient_golem", "dark_stone_golem"], "weight": 1},
+            ],
+        },
     ],
     "sites": [
         {
-            "key": "old_mines",
+            "key": "old_mines_site",
             "name": "舊礦坑",
             "skill": "mine",
             "min_legion_level": 1,
@@ -1430,7 +1633,7 @@ PATCH: dict = {
             ],
         },
         {
-            "key": "herb_garden",
+            "key": "herb_garden_site",
             "name": "藥草園",
             "skill": "garden",
             "min_legion_level": 1,
@@ -1441,7 +1644,7 @@ PATCH: dict = {
             ],
         },
         {
-            "key": "deep_shafts",
+            "key": "deep_shafts_site",
             "name": "深井礦道",
             "skill": "mine",
             "min_legion_level": 3,
@@ -1453,7 +1656,7 @@ PATCH: dict = {
             ],
         },
         {
-            "key": "ancient_ruins",
+            "key": "ancient_ruins_site",
             "name": "古代遺跡",
             "skill": "garden",
             "min_legion_level": 3,
@@ -1463,6 +1666,30 @@ PATCH: dict = {
                 {"material": "raspberry", "weight": 2, "min": 1, "max": 2},
                 {"material": "molt_skin", "weight": 1, "min": 1, "max": 1},
             ],
+        },
+        {
+            "key": "abandoned_fortress_site",
+            "name": "廢棄要塞",
+            "skill": "mine",
+            "min_legion_level": 5,
+            "description": "曾經的要塞，如今只剩下斷垣殘壁。",
+            "yields": [
+                {"material": "rough_stone", "weight": 1, "min": 1, "max": 4},
+                {"material": "iron_ore", "weight": 1, "min": 1, "max": 3},
+                {"material": "silver_ore", "weight": 1, "min": 1, "max": 2},
+            ],
+        },
+        {
+            "key": "enchanted_grove_site",
+            "name": "魔法樹林",
+            "skill": "garden",
+            "min_legion_level": 5,
+            "description": "樹林中充滿了魔法的氣息，似乎有些神秘的生物在其中棲息。",
+            "yields": [
+                {"material": "sunherb", "weight": 2, "min": 1, "max": 4},
+                {"material": "duskberry", "weight": 2, "min": 1, "max": 3},
+                {"material": "moss_patch", "weight": 1, "min": 1, "max": 2},
+            ],  
         },
     ],
     "recipes": [
@@ -1759,7 +1986,20 @@ PATCH: dict = {
                 {"material": "poison_gland", "qty": 2},
                 {"material": "silver_ore", "qty": 12},
             ],
-        }
+        },
+        {
+            "key": "cook_tail_soup",
+            "name": "尾骨湯",
+            "skill": "cook",
+            "material": "tail_soup",
+            "qty": 1,
+            "req": 2,
+            "inputs": [
+                {"material": "lizard_tail", "qty": 4},
+                {"material": "molt_skin", "qty": 2},
+                {"material": "cobweb", "qty": 8},
+            ],
+        },
     ],
     "upgrade_costs": [
         {"level": 2, "material": "slime_goo", "base_qty": 5},
